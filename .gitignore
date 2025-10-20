@@ -1,0 +1,65 @@
+# ─────────────────────────────
+# Spec Kit generated files
+# ─────────────────────────────
+.speckit/
+speckit_cache/
+speckit_logs/
+speckit_temp/
+speckit_output/
+*.speckit.json
+*.speckit.tmp
+*.speckit.lock
+
+# ─────────────────────────────
+# AI provider metadata / session data
+# ─────────────────────────────
+.ai_history/
+.ai_sessions/
+*.ai_cache
+*.copilot-session
+*.claude-context
+*.gemini-cache
+
+# ─────────────────────────────
+# Local environment & tooling
+# ─────────────────────────────
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+
+# ─────────────────────────────
+# Python virtual environments
+# ─────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.pytest_cache/
+.cache/
+
+# ─────────────────────────────
+# Node (if you use JS/TS)
+# ─────────────────────────────
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# ─────────────────────────────
+# Editors / IDEs
+# ─────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─────────────────────────────
+# Optional: Ignore intermediate AI outputs
+# Keep final md specs, but ignore drafts
+# ─────────────────────────────
+drafts/
+*.draft.md
+*.bak
