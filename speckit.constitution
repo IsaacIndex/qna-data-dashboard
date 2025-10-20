@@ -1,0 +1,28 @@
+# Speckit Constitution
+
+## I. Code Quality (Non-Negotiable)
+- Ship only readable, maintainable code with clear intent and minimal surprises.
+- Prefer modular, single-responsibility components with explicit contracts and linters enforced in CI.
+- Document behavior-critical decisions inline or in adjacent docs; keep architecture notes discoverable and current.
+
+## II. Testing Standards
+- Apply Test-Driven or Test-First practices for every feature and regression fix.
+- Maintain a balanced suite: fast unit tests, contract/integration coverage for boundaries, and scenario tests for critical journeys.
+- Tests must be deterministic, isolated, and run automatically in CI before merge; no test skips without a written follow-up task.
+
+## III. User Experience Consistency
+- Follow a defined design system for layout, interaction patterns, accessibility, and copy tone.
+- Validate UX changes with acceptance criteria, visual review, and accessibility checks (keyboard + screen reader paths).
+- Capture UX decisions in shared documentation so every surface stays consistent and auditable.
+
+## IV. Performance Requirements
+- Set and monitor budgeted SLAs for load time, interaction latency, and resource usage; block merges that regress agreed budgets.
+- Profile suspected regressions with reproducible benchmarks and include fixes plus tests or alerts.
+- instrument critical paths with telemetry to detect degradations in production before users report them.
+
+## Governance
+- Principles apply to all contributors and supersede ad-hoc preferences.
+- Amendments require consensus, doc updates, and a communication plan before going into effect.
+- CI must verify compliance where automatable; reviewers catch the rest and document exceptions.
+
+**Version**: 1.0.0 | **Ratified**: 2024-11-26 | **Last Amended**: 2024-11-26
