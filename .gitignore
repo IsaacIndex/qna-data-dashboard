@@ -13,8 +13,8 @@ Thumbs.db
 # ------------------------
 # Spec Kit artifacts & scaffolding
 # ------------------------
-/.specify/           # the Spec Kit scaffold folder (specs, templates, scripts)  
-!.specify/README.md  # if you want to keep README inside  
+.specify
+.specify/*
 /specs/              # generated spec folders for each feature  
 /task-output/        # (if your workflow outputs a task-implementation folder)  
 /.github/prompts/    # if Spec Kit uses prompt files that are auto generated  
