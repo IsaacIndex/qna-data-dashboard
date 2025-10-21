@@ -1,0 +1,68 @@
+[tool.poetry]
+name = "qna-data-dashboard"
+version = "0.1.0"
+description = "Local Streamlit dashboard for query coverage analytics."
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+streamlit = "^1.39.0"
+pandas = "^2.2.3"
+pyarrow = "^17.0.0"
+openpyxl = "^3.1.5"
+sentence-transformers = "^3.0.1"
+chromadb = "^0.5.5"
+plotly = "^5.24.1"
+pydantic = "^2.9.2"
+sqlalchemy = "^2.0.36"
+alembic = "^1.13.3"
+python-dotenv = "^1.0.1"
+fastapi = "^0.115.0"
+python-multipart = "^0.0.6"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+pytest-cov = "^5.0.0"
+pytest-benchmark = "^4.0.0"
+black = "^24.10.0"
+ruff = "^0.6.8"
+mypy = "^1.12.0"
+types-requests = "^2.31.0.6"
+ipykernel = "^6.29.5"
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.6.0"
+
+[tool.poetry.scripts]
+qna-dashboard = "app.main:run"
+lint = "ruff.__main__:main"
+format = "black:patched_main"
+typecheck = "mypy.__main__:console_entry"
+test = "pytest:console_main"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = "--cov=app --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+warn_return_any = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_optional = true
+plugins = ["sqlalchemy.ext.mypy.plugin"]
+
+[tool.streamlit]
+server.headless = true
