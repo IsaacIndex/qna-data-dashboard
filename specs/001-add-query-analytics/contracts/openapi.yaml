@@ -1,0 +1,407 @@
+openapi: 3.1.0
+info:
+  title: Local Query Coverage Analytics API
+  version: 0.1.0
+  description: |
+    Internal service interface that powers the Streamlit application for local CSV/Excel ingestion,
+    semantic search via ChromaDB, and coverage analytics visualizations.
+servers:
+  - url: http://localhost:8502/api
+    description: Streamlit-hosted API proxy
+paths:
+  /datasets:
+    get:
+      summary: List available datasets and ingestion status
+      operationId: listDatasets
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datasets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DataFile"
+  /datasets/import:
+    post:
+      summary: Import a CSV/Excel file and trigger embedding
+      operationId: importDataset
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                display_name:
+                  type: string
+                delimiter:
+                  type: string
+                sheet_name:
+                  type: string
+                selected_columns:
+                  type: array
+                  items:
+                    type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+              required:
+                - file
+                - display_name
+                - selected_columns
+      responses:
+        "202":
+          description: Ingestion accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionReceipt"
+        "400":
+          description: Invalid file or configuration
+  /datasets/{datasetId}/audits/latest:
+    get:
+      summary: Retrieve the latest ingestion audit summary
+      operationId: getLatestAudit
+      parameters:
+        - $ref: "#/components/parameters/DatasetId"
+      responses:
+        "200":
+          description: Latest audit returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionAudit"
+        "404":
+          description: Dataset or audit not found
+  /search:
+    get:
+      summary: Execute semantic search over embedded queries
+      operationId: searchQueries
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+          description: Natural language query
+        - in: query
+          name: dataset_ids
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+          description: Filter results to specific datasets
+        - in: query
+          name: column_names
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+          description: Filter results to specific columns
+        - in: query
+          name: min_similarity
+          schema:
+            type: number
+            format: float
+            default: 0.6
+          description: Minimum cosine similarity threshold
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: Number of results to return
+      responses:
+        "200":
+          description: Ranked search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchResult"
+                  latency_ms:
+                    type: number
+                    format: float
+  /analytics/clusters:
+    get:
+      summary: Retrieve cluster analytics for selected datasets
+      operationId: getClusters
+      parameters:
+        - in: query
+          name: dataset_ids
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - in: query
+          name: similarity_threshold
+          schema:
+            type: number
+            format: float
+            default: 0.65
+      responses:
+        "200":
+          description: Cluster analytics returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clusters:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SimilarityCluster"
+  /analytics/summary:
+    get:
+      summary: Provide aggregate coverage metrics
+      operationId: getCoverageSummary
+      parameters:
+        - in: query
+          name: dataset_ids
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - in: query
+          name: time_range_start
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: time_range_end
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Aggregated metrics across datasets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageSummary"
+  /benchmarks/runs:
+    post:
+      summary: Trigger a performance benchmark run
+      operationId: runBenchmarks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dataset_id:
+                  type: string
+                  nullable: true
+                scenarios:
+                  type: array
+                  items:
+                    type: string
+                    enum: [ingestion, search, dashboard_render]
+              required:
+                - scenarios
+      responses:
+        "202":
+          description: Benchmark run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkReceipt"
+  /benchmarks/runs/{runId}:
+    get:
+      summary: Fetch results from a benchmark execution
+      operationId: getBenchmarkRun
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Benchmark results retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkRun"
+        "404":
+          description: Benchmark run not found
+
+components:
+  parameters:
+    DatasetId:
+      name: datasetId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    DataFile:
+      type: object
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        file_type:
+          type: string
+          enum: [csv, excel]
+        row_count:
+          type: integer
+        selected_columns:
+          type: array
+          items:
+            type: string
+        ingestion_status:
+          type: string
+          enum: [pending, processing, ready, failed]
+        processed_at:
+          type: string
+          format: date-time
+    IngestionReceipt:
+      type: object
+      properties:
+        dataset_id:
+          type: string
+        ingestion_status:
+          type: string
+          enum: [pending, processing]
+        started_at:
+          type: string
+          format: date-time
+    IngestionAudit:
+      type: object
+      properties:
+        dataset_id:
+          type: string
+        status:
+          type: string
+          enum: [succeeded, failed, cancelled]
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        processed_rows:
+          type: integer
+        skipped_rows:
+          type: integer
+        error_log_path:
+          type: string
+          nullable: true
+    SearchResult:
+      type: object
+      properties:
+        record_id:
+          type: string
+        dataset_id:
+          type: string
+        column_name:
+          type: string
+        row_index:
+          type: integer
+        text:
+          type: string
+        similarity:
+          type: number
+          format: float
+        metadata:
+          type: object
+          additionalProperties: true
+    SimilarityCluster:
+      type: object
+      properties:
+        cluster_id:
+          type: string
+        cluster_label:
+          type: string
+        member_count:
+          type: integer
+        centroid_similarity:
+          type: number
+          format: float
+        diversity_score:
+          type: number
+          format: float
+        dataset_scope:
+          type: array
+          items:
+            type: string
+    CoverageSummary:
+      type: object
+      properties:
+        dataset_ids:
+          type: array
+          items:
+            type: string
+        total_queries:
+          type: integer
+        unique_topics_estimate:
+          type: integer
+        redundancy_ratio:
+          type: number
+          format: float
+        last_refreshed_at:
+          type: string
+          format: date-time
+    BenchmarkReceipt:
+      type: object
+      properties:
+        run_id:
+          type: string
+        scenarios:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [queued, running]
+    BenchmarkRun:
+      type: object
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        recorded_at:
+          type: string
+          format: date-time
+        metrics:
+          type: array
+          items:
+            type: object
+            properties:
+              metric_type:
+                type: string
+              p50_ms:
+                type: number
+                format: float
+              p95_ms:
+                type: number
+                format: float
+              records_per_second:
+                type: number
+                format: float

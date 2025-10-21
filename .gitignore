@@ -15,7 +15,6 @@ Thumbs.db
 # ------------------------
 .specify
 .specify/*
-/specs/              # generated spec folders for each feature  
 /task-output/        # (if your workflow outputs a task-implementation folder)  
 /.github/prompts/    # if Spec Kit uses prompt files that are auto generated  
 /build/              # output build folder (if your plan generates build artifacts)  
@@ -31,6 +30,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.pytest_cache
 
 # ------------------------
 # Logs & runtime files
@@ -39,7 +39,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
-*.lock   # optionally skip lockfiles if you version them  
 coverage/
 coverage-report/
 
@@ -63,10 +62,20 @@ credentials.json
 local.settings.json
 
 # ------------------------
+# Local data storage
+# ------------------------
+data/raw/
+data/chromadb/
+data/*.db
+data/**/*.db
+data/logs/
+*.db
+*.sqlite
+
+# ------------------------
 # Platform / Stack specific
 # ------------------------
 # * Node.js
-npm-debug.log
 package-lock.json
 yarn.lock
 
