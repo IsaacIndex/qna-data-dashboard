@@ -8,7 +8,7 @@ from typing import Iterable, Iterator, Sequence
 
 from sqlalchemy import Select, create_engine, delete, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from .schema import (
     AuditStatus,
@@ -123,6 +123,26 @@ class MetadataRepository:
             data_file.processed_at = processed_at
         return data_file
 
+    def fetch_search_candidates(
+        self,
+        *,
+        dataset_ids: Sequence[str] | None = None,
+        column_names: Sequence[str] | None = None,
+        max_records: int | None = 5000,
+    ) -> Sequence[QueryRecord]:
+        stmt: Select[tuple[QueryRecord]] = (
+            select(QueryRecord)
+            .options(joinedload(QueryRecord.data_file))
+            .order_by(QueryRecord.created_at.desc())
+        )
+        if dataset_ids:
+            stmt = stmt.where(QueryRecord.data_file_id.in_(tuple(dataset_ids)))
+        if column_names:
+            stmt = stmt.where(QueryRecord.column_name.in_(tuple(column_names)))
+        if max_records is not None:
+            stmt = stmt.limit(max(1, max_records))
+        return self.session.execute(stmt).scalars().all()
+
     # Query records -------------------------------------------------------
     def replace_query_records(
         self,
@@ -199,6 +219,10 @@ class MetadataRepository:
             self.session.merge(cluster)
         for membership in memberships:
             self.session.merge(membership)
+
+    def list_similarity_clusters(self) -> Sequence[SimilarityCluster]:
+        stmt: Select[tuple[SimilarityCluster]] = select(SimilarityCluster)
+        return self.session.execute(stmt).scalars().all()
 
     # Audits --------------------------------------------------------------
     def create_audit(

@@ -76,15 +76,15 @@
 
 ### Tests for User Story 2 (write before implementation)
 
-- [ ] T021 [P] [US2] Add `/search` contract coverage validating query params and responses in `tests/contract/test_search_api.py`
-- [ ] T022 [P] [US2] Add semantic search integration test covering filters and similarity thresholds in `tests/integration/test_search_api.py`
-- [ ] T023 [P] [US2] Record search performance benchmark enforcing <1 second latency in `tests/performance/test_search_latency.py`
+- [X] T021 [P] [US2] Add `/search` contract coverage validating query params and responses in `tests/contract/test_search_api.py`
+- [X] T022 [P] [US2] Add semantic search integration test covering filters and similarity thresholds in `tests/integration/test_search_api.py`
+- [X] T023 [P] [US2] Record search performance benchmark enforcing <1 second latency in `tests/performance/test_search_latency.py`
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement search service querying ChromaDB with metadata filters in `app/services/search.py`
-- [ ] T025 [US2] Register `/search` endpoint and response serialization per OpenAPI contract in `app/api/router.py`
-- [ ] T026 [US2] Build Streamlit search page with query input, filters, and results table in `app/pages/2_search.py`
+- [X] T024 [US2] Implement search service querying ChromaDB with metadata filters in `app/services/search.py`
+- [X] T025 [US2] Register `/search` endpoint and response serialization per OpenAPI contract in `app/api/router.py`
+- [X] T026 [US2] Build Streamlit search page with query input, filters, and results table in `app/pages/2_search.py`
 
 **Checkpoint**: Semantic search available and independently testable.
 
@@ -98,15 +98,15 @@
 
 ### Tests for User Story 3 (write before implementation)
 
-- [ ] T027 [P] [US3] Add analytics contract tests for `/analytics/clusters` and `/analytics/summary` in `tests/contract/test_analytics_api.py`
-- [ ] T028 [P] [US3] Add analytics integration test validating clustering and diversity metrics in `tests/integration/test_analytics_dashboard.py`
+- [X] T027 [P] [US3] Add analytics contract tests for `/analytics/clusters` and `/analytics/summary` in `tests/contract/test_analytics_api.py`
+- [X] T028 [P] [US3] Add analytics integration test validating clustering and diversity metrics in `tests/integration/test_analytics_dashboard.py`
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Implement analytics service generating clusters, redundancy ratios, and summaries in `app/services/analytics.py`
-- [ ] T030 [US3] Persist clustering metadata and performance metrics in `app/db/metadata.py`
-- [ ] T031 [US3] Implement analytics endpoints per OpenAPI contract in `app/api/router.py`
-- [ ] T032 [US3] Build Streamlit analytics dashboard with Plotly visualizations in `app/pages/3_analytics.py`
+- [X] T029 [US3] Implement analytics service generating clusters, redundancy ratios, and summaries in `app/services/analytics.py`
+- [X] T030 [US3] Persist clustering metadata and performance metrics in `app/db/metadata.py`
+- [X] T031 [US3] Implement analytics endpoints per OpenAPI contract in `app/api/router.py`
+- [X] T032 [US3] Build Streamlit analytics dashboard with Plotly visualizations in `app/pages/3_analytics.py`
 
 **Checkpoint**: Analytics dashboard functional and independently testable.
 
@@ -116,10 +116,10 @@
 
 **Purpose**: Documentation, accessibility, and release readiness spanning all stories.
 
-- [ ] T033 [P] Update quickstart with final commands, test workflows, and maintenance notes in `specs/001-add-query-analytics/quickstart.md`
-- [ ] T034 Capture accessibility QA results and remediation checklist in `specs/001-add-query-analytics/checklists/accessibility.md`
-- [ ] T035 Document performance benchmark baselines and instrumentation usage in `docs/performance/001-add-query-analytics.md`
-- [ ] T036 Validate end-to-end workflow using documented steps and log outcomes in `specs/001-add-query-analytics/checklists/qa.md`
+- [X] T033 [P] Update quickstart with final commands, test workflows, and maintenance notes in `specs/001-add-query-analytics/quickstart.md`
+- [X] T034 Capture accessibility QA results and remediation checklist in `specs/001-add-query-analytics/checklists/accessibility.md`
+- [X] T035 Document performance benchmark baselines and instrumentation usage in `docs/performance/001-add-query-analytics.md`
+- [X] T036 Validate end-to-end workflow using documented steps and log outcomes in `specs/001-add-query-analytics/checklists/qa.md`
 
 ---
 

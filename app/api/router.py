@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 
 from app.db.metadata import (
     MetadataRepository,
@@ -14,8 +14,10 @@ from app.db.metadata import (
     init_database,
     session_scope,
 )
+from app.services.analytics import AnalyticsService
 from app.services.embeddings import EmbeddingService
 from app.services.ingestion import IngestionOptions, IngestionService
+from app.services.search import SearchService
 
 
 def create_app(
@@ -49,6 +51,21 @@ def create_app(
             embedding_service=service,
             data_root=data_root,
         )
+
+    def get_search_service(repo: MetadataRepository = Depends(get_repository)):
+        service = embedding_factory(repo)
+        return SearchService(
+            metadata_repository=repo,
+            embedding_service=service,
+        )
+
+    def _split_csv(value: str | None) -> list[str] | None:
+        if not value:
+            return None
+        return [item.strip() for item in value.split(",") if item.strip()]
+
+    def get_analytics_service(repo: MetadataRepository = Depends(get_repository)):
+        return AnalyticsService(metadata_repository=repo)
 
     @app.get("/datasets")
     def list_datasets(repo: MetadataRepository = Depends(get_repository)):
@@ -123,5 +140,62 @@ def create_app(
             "started_at": audit.started_at.isoformat(),
             "completed_at": audit.completed_at.isoformat() if audit.completed_at else None,
         }
+
+    @app.get("/search")
+    def search_queries(
+        q: str = Query(..., description="Natural language search query"),
+        dataset_ids: str | None = Query(
+            default=None,
+            description="Comma-separated dataset IDs to filter results",
+        ),
+        column_names: str | None = Query(
+            default=None,
+            description="Comma-separated column names to filter results",
+        ),
+        min_similarity: float = Query(
+            default=0.6,
+            ge=0.0,
+            le=1.0,
+            description="Minimum similarity threshold (0-1)",
+        ),
+        limit: int = Query(default=20, ge=1, le=100, description="Maximum results to return"),
+        search_service: SearchService = Depends(get_search_service),
+    ):
+        dataset_filters = _split_csv(dataset_ids) or None
+        column_filters = _split_csv(column_names) or None
+        results = search_service.search(
+            query=q,
+            dataset_ids=dataset_filters,
+            column_names=column_filters,
+            min_similarity=min_similarity,
+            limit=limit,
+        )
+        return {"results": [result.to_dict() for result in results]}
+
+    @app.get("/analytics/clusters")
+    def analytics_clusters(
+        dataset_ids: str | None = Query(
+            default=None,
+            description="Comma-separated dataset IDs to scope analytics",
+        ),
+        analytics_service: AnalyticsService = Depends(get_analytics_service),
+    ):
+        dataset_filters = _split_csv(dataset_ids) or None
+        clusters = analytics_service.list_clusters(dataset_filters)
+        if not clusters:
+            clusters = analytics_service.build_clusters(dataset_filters)
+        return {"clusters": [cluster.to_dict() for cluster in clusters]}
+
+    @app.get("/analytics/summary")
+    def analytics_summary(
+        dataset_ids: str | None = Query(
+            default=None,
+            description="Comma-separated dataset IDs to scope analytics",
+        ),
+        analytics_service: AnalyticsService = Depends(get_analytics_service),
+    ):
+        dataset_filters = _split_csv(dataset_ids) or None
+        summary = analytics_service.summarize_coverage(dataset_filters)
+        return summary.to_dict()
 
     return app
