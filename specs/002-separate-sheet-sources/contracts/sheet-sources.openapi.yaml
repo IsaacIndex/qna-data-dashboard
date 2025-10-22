@@ -1,0 +1,375 @@
+openapi: 3.1.0
+info:
+  title: Sheet-Level Data Sources API
+  version: 0.1.0
+  description: Contracts enabling sheet-level ingestion, catalog management, and cross-sheet queries.
+tags:
+  - name: source-bundles
+    description: Manage uploaded Excel/CSV bundles and their sheet sources.
+  - name: sheet-sources
+    description: Interact with individual sheet-level datasets.
+  - name: queries
+    description: Build and validate cross-sheet analytics requests.
+paths:
+  /api/source-bundles/import:
+    post:
+      tags: [source-bundles]
+      summary: Upload a new workbook/CSV and register visible sheets.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, hiddenSheetPolicy]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Excel workbook (.xlsx) or CSV file.
+                hiddenSheetPolicy:
+                  $ref: '#/components/schemas/HiddenSheetPolicy'
+                selectedColumns:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional whitelist applied to all sheets.
+      responses:
+        '201':
+          description: Bundle ingested and sheet sources created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceBundle'
+        '409':
+          description: Duplicate file detected (matching file hash).
+        '422':
+          description: Validation failure (unsupported format or missing headers).
+  /api/source-bundles/{bundleId}/refresh:
+    post:
+      tags: [source-bundles]
+      summary: Re-scan an existing bundle and update sheet sources.
+      parameters:
+        - in: path
+          name: bundleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allowHiddenSheets]
+              properties:
+                allowHiddenSheets:
+                  type: array
+                  items:
+                    type: string
+                  description: Hidden sheet names explicitly approved for ingestion.
+                renameTolerance:
+                  type: string
+                  enum: [strict, allow_same_schema]
+                  default: allow_same_schema
+                  description: Controls how sheet renames are reconciled.
+      responses:
+        '202':
+          description: Refresh scheduled; response includes summary details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BundleAudit'
+        '404':
+          description: Source bundle not found.
+        '409':
+          description: Refresh already in progress.
+  /api/source-bundles/{bundleId}/sheets:
+    get:
+      tags: [source-bundles]
+      summary: List sheet sources for a bundle, including status and schema metadata.
+      parameters:
+        - in: path
+          name: bundleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sheet sources returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bundle:
+                    $ref: '#/components/schemas/SourceBundle'
+                  sheets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SheetSource'
+        '404':
+          description: Source bundle not found.
+  /api/sheet-sources/{sheetId}:
+    patch:
+      tags: [sheet-sources]
+      summary: Update sheet metadata, activation status, or description.
+      parameters:
+        - in: path
+          name: sheetId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                  maxLength: 2000
+                status:
+                  $ref: '#/components/schemas/SheetStatus'
+                tags:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional catalog tags for discovery.
+      responses:
+        '200':
+          description: Sheet source updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SheetSource'
+        '400':
+          description: Invalid transition (e.g., activating sheet without schema validation).
+        '404':
+          description: Sheet source not found.
+  /api/queries/preview:
+    post:
+      tags: [queries]
+      summary: Validate and execute a cross-sheet query preview.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryPreviewRequest'
+      responses:
+        '200':
+          description: Preview results plus validation warnings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryPreviewResponse'
+        '409':
+          description: Schema incompatibility or inactive sheet detected.
+        '422':
+          description: Query validation failure.
+components:
+  schemas:
+    HiddenSheetPolicy:
+      type: object
+      required: [defaultAction]
+      properties:
+        defaultAction:
+          type: string
+          enum: [exclude, include_all]
+          description: Default treatment of hidden sheets when none specified.
+        overrides:
+          type: array
+          items:
+            type: string
+          description: Explicit hidden sheet names to include.
+    SourceBundle:
+      type: object
+      required: [id, displayName, fileType, sheetCount, ingestionStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        fileType:
+          type: string
+          enum: [csv, excel]
+        ingestionStatus:
+          type: string
+          enum: [pending, processing, ready, partial_failed, failed]
+        sheetCount:
+          type: integer
+        lastRefreshedAt:
+          type: string
+          format: date-time
+        ownerUserId:
+          type: string
+          format: uuid
+        refreshCadence:
+          type: string
+          description: ISO 8601 duration or schedule label.
+    SheetSource:
+      type: object
+      required: [id, bundleId, displayLabel, sheetName, status, rowCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        bundleId:
+          type: string
+          format: uuid
+        displayLabel:
+          type: string
+        sheetName:
+          type: string
+        visibilityState:
+          type: string
+          enum: [visible, hidden_opt_in]
+        status:
+          $ref: '#/components/schemas/SheetStatus'
+        rowCount:
+          type: integer
+        columnSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnDescriptor'
+        lastRefreshedAt:
+          type: string
+          format: date-time
+        checksum:
+          type: string
+        positionIndex:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+    SheetStatus:
+      type: string
+      enum: [active, inactive, deprecated]
+    ColumnDescriptor:
+      type: object
+      required: [name, inferredType, nullable]
+      properties:
+        name:
+          type: string
+        inferredType:
+          type: string
+        nullable:
+          type: boolean
+    BundleAudit:
+      type: object
+      required: [id, bundleId, status, startedAt, completedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        bundleId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [succeeded, failed, partial]
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        sheetSummary:
+          type: object
+          properties:
+            created:
+              type: integer
+            updated:
+              type: integer
+            deactivated:
+              type: integer
+        hiddenSheetsEnabled:
+          type: array
+          items:
+            type: string
+    QueryPreviewRequest:
+      type: object
+      required: [sheets, projections]
+      properties:
+        sheets:
+          type: array
+          items:
+            type: object
+            required: [sheetId]
+            properties:
+              sheetId:
+                type: string
+                format: uuid
+              alias:
+                type: string
+              role:
+                type: string
+                enum: [primary, join, union]
+              joinKeys:
+                type: array
+                items:
+                  type: string
+        filters:
+          type: array
+          items:
+            type: object
+            required: [sheetAlias, column, operator, value]
+            properties:
+              sheetAlias:
+                type: string
+              column:
+                type: string
+              operator:
+                type: string
+              value:
+                oneOf:
+                  - type: string
+                  - type: number
+                  - type: boolean
+        projections:
+          type: array
+          items:
+            type: object
+            required: [expression, label]
+            properties:
+              expression:
+                type: string
+                description: Column reference or aggregation syntax.
+              label:
+                type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100000
+    QueryPreviewResponse:
+      type: object
+      required: [headers, rows]
+      properties:
+        headers:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        executionMetrics:
+          type: object
+          properties:
+            executionMs:
+              type: integer
+            rowCount:
+              type: integer
