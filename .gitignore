@@ -13,8 +13,8 @@ Thumbs.db
 # ------------------------
 # Spec Kit artifacts & scaffolding
 # ------------------------
-.specify
-.specify/*
+# .specify
+# .specify/*
 /task-output/        # (if your workflow outputs a task-implementation folder)  
 /.github/prompts/    # if Spec Kit uses prompt files that are auto generated  
 /build/              # output build folder (if your plan generates build artifacts)  
