@@ -117,7 +117,7 @@ def main() -> None:
     col3.metric("Redundancy Ratio", f"{summary.redundancy_ratio:.2f}")
 
     st.subheader("Cluster Overview")
-    st.dataframe(_clusters_dataframe(clusters), use_container_width=True, hide_index=True)
+    st.dataframe(_clusters_dataframe(clusters), width="stretch", hide_index=True)
     st.caption(f"Last refreshed: {summary.last_refreshed_at.isoformat()}")
 
 

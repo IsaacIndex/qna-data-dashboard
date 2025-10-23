@@ -156,7 +156,7 @@ def main() -> None:
                 st.warning("No results matched the current filters.")
             else:
                 st.success(f"Found {len(results)} matching queries.")
-                st.dataframe(_format_results(results), use_container_width=True, hide_index=True)
+                st.dataframe(_format_results(results), width="stretch", hide_index=True)
 
 
 if __name__ == "__main__":

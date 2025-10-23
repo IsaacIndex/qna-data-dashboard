@@ -105,7 +105,7 @@ def _render_table(rows: list[list[str]], headers: list[str]) -> None:
         st.warning("Preview returned no rows for the current configuration.")
         return
     dataframe = pd.DataFrame(rows, columns=headers)
-    st.dataframe(dataframe, use_container_width=True, hide_index=True)
+    st.dataframe(dataframe, width="stretch", hide_index=True)
 
 
 def main() -> None:
