@@ -18,9 +18,9 @@ description: "Task list for Sheet-Level Data Sources feature"
 
 **Purpose**: Create shared fixtures, helpers, and constants used across all user stories
 
-- [ ] T001 Create multi-sheet workbook and CSV fixture builders in `tests/fixtures/sheet_sources/factory.py`
-- [ ] T002 Expose pytest fixtures for sheet bundles using factory helpers in `tests/conftest.py`
-- [ ] T003 Add sheet performance threshold constants (ingestion max, query p95) in `app/utils/constants.py`
+- [X] T001 Create multi-sheet workbook and CSV fixture builders in `tests/fixtures/sheet_sources/factory.py`
+- [X] T002 Expose pytest fixtures for sheet bundles using factory helpers in `tests/conftest.py`
+- [X] T003 Add sheet performance threshold constants (ingestion max, query p95) in `app/utils/constants.py`
 
 ---
 
@@ -28,12 +28,12 @@ description: "Task list for Sheet-Level Data Sources feature"
 
 **Purpose**: Establish schema, repository, and service scaffolding for sheet sources
 
-- [ ] T004 Refactor SQLAlchemy models to add `SourceBundle`, `SheetSource`, `BundleAudit`, `SheetMetric`, and `QuerySheetLink` in `app/db/schema.py`
-- [ ] T005 Create DataFile decomposition migration and backfill logic in `app/db/migrations/002_sheet_sources.py`
-- [ ] T006 Extend `MetadataRepository` with bundle, sheet, audit, metric, and query link operations in `app/db/metadata.py`
-- [ ] T007 Refactor embedding jobs to operate on sheet-scoped datasets in `app/services/embeddings.py`
-- [ ] T008 Update search service to load sheet metadata and log sheet metrics in `app/services/search.py`
-- [ ] T009 Update analytics service to summarize sheet-scoped records and metrics in `app/services/analytics.py`
+- [X] T004 Refactor SQLAlchemy models to add `SourceBundle`, `SheetSource`, `BundleAudit`, `SheetMetric`, and `QuerySheetLink` in `app/db/schema.py`
+- [X] T005 Create DataFile decomposition migration and backfill logic in `app/db/migrations/002_sheet_sources.py`
+- [X] T006 Extend `MetadataRepository` with bundle, sheet, audit, metric, and query link operations in `app/db/metadata.py`
+- [X] T007 Refactor embedding jobs to operate on sheet-scoped datasets in `app/services/embeddings.py`
+- [X] T008 Update search service to load sheet metadata and log sheet metrics in `app/services/search.py`
+- [X] T009 Update analytics service to summarize sheet-scoped records and metrics in `app/services/analytics.py`
 
 ---
 
@@ -44,15 +44,15 @@ description: "Task list for Sheet-Level Data Sources feature"
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] Add contract tests for `POST /api/source-bundles/import` covering hidden sheet policy handling in `tests/contract/test_source_bundles_api.py`
-- [ ] T011 [P] [US1] Add integration test for multi-sheet ingestion and catalog listing in `tests/integration/sheets/test_sheet_catalog.py`
-- [ ] T012 [P] [US1] Add unit tests for sheet enumeration and audit recording in `tests/unit/test_sheet_ingestion.py`
+- [X] T010 [P] [US1] Add contract tests for `POST /api/source-bundles/import` covering hidden sheet policy handling in `tests/contract/test_source_bundles_api.py`
+- [X] T011 [P] [US1] Add integration test for multi-sheet ingestion and catalog listing in `tests/integration/sheets/test_sheet_catalog.py`
+- [X] T012 [P] [US1] Add unit tests for sheet enumeration and audit recording in `tests/unit/test_sheet_ingestion.py`
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement SourceBundle ingestion with hidden sheet governance, sheet metrics, and previews in `app/services/ingestion.py`
-- [ ] T014 [US1] Expose `/api/source-bundles/import` and `/api/source-bundles/{bundleId}/sheets` responses in `app/api/router.py`
-- [ ] T015 [US1] Update Streamlit ingestion UI for sheet selection, hidden sheet acknowledgements, and catalog display in `app/pages/1_ingest.py`
+- [X] T013 [US1] Implement SourceBundle ingestion with hidden sheet governance, sheet metrics, and previews in `app/services/ingestion.py`
+- [X] T014 [US1] Expose `/api/source-bundles/import` and `/api/source-bundles/{bundleId}/sheets` responses in `app/api/router.py`
+- [X] T015 [US1] Update Streamlit ingestion UI for sheet selection, hidden sheet acknowledgements, and catalog display in `app/pages/1_ingest.py`
 
 ---
 
@@ -63,16 +63,16 @@ description: "Task list for Sheet-Level Data Sources feature"
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] Add contract tests for `POST /api/queries/preview` covering cross-bundle joins in `tests/contract/test_queries_preview.py`
-- [ ] T017 [P] [US2] Add integration test for cross-sheet joins and aggregations in `tests/integration/sheets/test_sheet_queries.py`
-- [ ] T018 [P] [US2] Add unit tests for schema compatibility checks in `tests/unit/test_query_builder.py`
+- [X] T016 [P] [US2] Add contract tests for `POST /api/queries/preview` covering cross-bundle joins in `tests/contract/test_queries_preview.py`
+- [X] T017 [P] [US2] Add integration test for cross-sheet joins and aggregations in `tests/integration/sheets/test_sheet_queries.py`
+- [X] T018 [P] [US2] Add unit tests for schema compatibility checks in `tests/unit/test_query_builder.py`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Implement cross-sheet query preview orchestration with compatibility warnings in `app/services/query_builder.py`
-- [ ] T020 [US2] Wire `/api/queries/preview` endpoint to the query builder service in `app/api/router.py`
-- [ ] T021 [US2] Persist `QueryDefinition` and `QuerySheetLink` relationships for saved queries in `app/db/metadata.py`
-- [ ] T022 [US2] Build Streamlit query builder page and navigation entry in `app/pages/4_query_builder.py` and `app/main.py`
+- [X] T019 [US2] Implement cross-sheet query preview orchestration with compatibility warnings in `app/services/query_builder.py`
+- [X] T020 [US2] Wire `/api/queries/preview` endpoint to the query builder service in `app/api/router.py`
+- [X] T021 [US2] Persist `QueryDefinition` and `QuerySheetLink` relationships for saved queries in `app/db/metadata.py`
+- [X] T022 [US2] Build Streamlit query builder page and navigation entry in `app/pages/4_query_builder.py` and `app/main.py`
 
 ---
 
@@ -83,17 +83,17 @@ description: "Task list for Sheet-Level Data Sources feature"
 
 ### Tests for User Story 3
 
-- [ ] T023 [P] [US3] Add contract tests for `/api/source-bundles/{bundleId}/refresh` and `/api/sheet-sources/{sheetId}` in `tests/contract/test_sheet_refresh.py`
-- [ ] T024 [P] [US3] Add integration test for rename detection and inactive sheet warnings in `tests/integration/sheets/test_sheet_refresh.py`
-- [ ] T025 [P] [US3] Add unit tests for refresh reconciliation heuristics in `tests/unit/test_sheet_refresh.py`
+- [X] T023 [P] [US3] Add contract tests for `/api/source-bundles/{bundleId}/refresh` and `/api/sheet-sources/{sheetId}` in `tests/contract/test_sheet_refresh_api.py`
+- [X] T024 [P] [US3] Add integration test for rename detection and inactive sheet warnings in `tests/integration/sheets/test_sheet_refresh_service.py`
+- [X] T025 [P] [US3] Add unit tests for refresh reconciliation heuristics in `tests/unit/test_sheet_refresh_utils.py`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement bundle refresh reconciliation with checksum and schema comparison in `app/services/ingestion.py`
-- [ ] T027 [US3] Implement `/api/source-bundles/{bundleId}/refresh` summary response in `app/api/router.py`
-- [ ] T028 [US3] Implement `/api/sheet-sources/{sheetId}` PATCH handler for metadata updates in `app/api/router.py`
-- [ ] T029 [US3] Surface inactive and renamed sheet warnings during previews in `app/services/query_builder.py`
-- [ ] T030 [US3] Display refresh status and inactive sheet messaging in `app/pages/1_ingest.py` and `app/pages/4_query_builder.py`
+- [X] T026 [US3] Implement bundle refresh reconciliation with checksum and schema comparison in `app/services/ingestion.py`
+- [X] T027 [US3] Implement `/api/source-bundles/{bundleId}/refresh` summary response in `app/api/router.py`
+- [X] T028 [US3] Implement `/api/sheet-sources/{sheetId}` PATCH handler for metadata updates in `app/api/router.py`
+- [X] T029 [US3] Surface inactive and renamed sheet warnings during previews in `app/services/query_builder.py`
+- [X] T030 [US3] Display refresh status and inactive sheet messaging in `app/pages/1_ingest.py` and `app/pages/4_query_builder.py`
 
 ---
 
@@ -101,9 +101,9 @@ description: "Task list for Sheet-Level Data Sources feature"
 
 **Purpose**: Finalize documentation, governance, and operational guidance
 
-- [ ] T031 Document sheet metrics alert thresholds and runbook in `docs/performance/002-sheet-sources.md`
-- [ ] T032 Publish hidden sheet governance procedures in `docs/operations/sheet-sources.md`
-- [ ] T033 Update quickstart steps for sheet uploads, query builder, and refresh workflow in `specs/002-separate-sheet-sources/quickstart.md`
+- [X] T031 Document sheet metrics alert thresholds and runbook in `docs/performance/002-sheet-sources.md`
+- [X] T032 Publish hidden sheet governance procedures in `docs/operations/sheet-sources.md`
+- [X] T033 Update quickstart steps for sheet uploads, query builder, and refresh workflow in `specs/002-separate-sheet-sources/quickstart.md`
 
 ---
 

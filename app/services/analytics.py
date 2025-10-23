@@ -68,18 +68,20 @@ class AnalyticsService:
 
     def build_clusters(self, dataset_ids: Sequence[str] | None = None) -> list[ClusterAnalytics]:
         records = self._load_records(dataset_ids=dataset_ids)
-        grouped = defaultdict(list)
+        grouped: defaultdict[tuple[str, str], list[QueryRecord]] = defaultdict(list)
         for record in records:
-            grouped[(record.data_file_id, record.column_name)].append(record)
+            scope_id = record.sheet_id or record.data_file_id
+            grouped[(scope_id, record.column_name)].append(record)
 
         clusters: list[SimilarityCluster] = []
         memberships: list[ClusterMembership] = []
         analytics: list[ClusterAnalytics] = []
 
         start = time.perf_counter()
-        for (dataset_id, column_name), rows in grouped.items():
+        for (scope_id, column_name), rows in grouped.items():
             dataset = rows[0].data_file
-            cluster_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{dataset_id}:{column_name}"))
+            sheet = rows[0].sheet
+            cluster_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{scope_id}:{column_name}"))
             centroid_text = rows[0].text
             similarities = [
                 self._similarity(centroid_text, row.text)
@@ -89,11 +91,17 @@ class AnalyticsService:
             unique_texts = {row.text.lower().strip() for row in rows if row.text}
             diversity = len(unique_texts) / len(rows) if rows else 0.0
 
+            cluster_label = (
+                f"{sheet.display_label} · {column_name}"
+                if sheet is not None
+                else f"{dataset.display_name} · {column_name}" if dataset else column_name
+            )
+
             cluster = SimilarityCluster(
                 id=cluster_id,
-                cluster_label=f"{dataset.display_name} · {column_name}" if dataset else column_name,
+                cluster_label=cluster_label,
                 algorithm=ClusteringAlgorithm.CUSTOM,
-                dataset_scope=[dataset_id],
+                dataset_scope=[scope_id],
                 member_count=len(rows),
                 centroid_similarity=round(min(1.0, average_similarity), 4),
                 diversity_score=round(min(1.0, diversity), 4),
@@ -113,8 +121,8 @@ class AnalyticsService:
             analytics.append(
                 ClusterAnalytics(
                     cluster_id=cluster_id,
-                    cluster_label=cluster.cluster_label,
-                    dataset_scope=[dataset_id],
+                    cluster_label=cluster_label,
+                    dataset_scope=[scope_id],
                     member_count=len(rows),
                     centroid_similarity=cluster.centroid_similarity,
                     diversity_score=cluster.diversity_score,
@@ -175,7 +183,11 @@ class AnalyticsService:
         if not clusters:
             clusters = self.build_clusters(dataset_ids=dataset_ids)
 
-        dataset_scope = list(dataset_ids) if dataset_ids else sorted({record.data_file_id for record in records})
+        dataset_scope = (
+            list(dataset_ids)
+            if dataset_ids
+            else sorted({record.sheet_id or record.data_file_id for record in records})
+        )
         return CoverageSummary(
             dataset_ids=dataset_scope,
             total_queries=total,
@@ -185,13 +197,21 @@ class AnalyticsService:
         )
 
     def _load_records(self, dataset_ids: Sequence[str] | None) -> list[QueryRecord]:
-        return list(
+        results = list(
             self.metadata_repository.fetch_search_candidates(
                 dataset_ids=dataset_ids,
                 column_names=None,
                 max_records=None,
             )
         )
+        if dataset_ids:
+            scope = set(dataset_ids)
+            results = [
+                record
+                for record in results
+                if (record.sheet_id and record.sheet_id in scope) or (record.data_file_id in scope)
+            ]
+        return results
 
     def _similarity(self, first: str, second: str) -> float:
         if not first or not second:

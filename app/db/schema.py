@@ -27,6 +27,7 @@ class IngestionStatus(str, enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     READY = "ready"
+    PARTIAL_FAILED = "partial_failed"
     FAILED = "failed"
 
 
@@ -41,6 +42,28 @@ class MetricType(str, enum.Enum):
     EMBEDDING = "embedding"
     SEARCH = "search"
     DASHBOARD_RENDER = "dashboard_render"
+
+
+class SheetVisibilityState(str, enum.Enum):
+    VISIBLE = "visible"
+    HIDDEN_OPT_IN = "hidden_opt_in"
+
+
+class SheetStatus(str, enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DEPRECATED = "deprecated"
+
+
+class SheetMetricType(str, enum.Enum):
+    INGESTION_DURATION_MS = "ingestion_duration_ms"
+    QUERY_P95_MS = "query_p95_ms"
+
+
+class QuerySheetRole(str, enum.Enum):
+    PRIMARY = "primary"
+    JOIN = "join"
+    UNION = "union"
 
 
 class ClusteringAlgorithm(str, enum.Enum):
@@ -78,11 +101,142 @@ class DataFile(Base):
     )
 
 
+class SourceBundle(Base):
+    __tablename__ = "source_bundles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    display_name: Mapped[str] = mapped_column(String(255))
+    original_path: Mapped[str] = mapped_column(Text)
+    file_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    file_type: Mapped[FileType] = mapped_column(Enum(FileType, name="bundle_file_type"))
+    delimiter: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    refresh_cadence: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    ingestion_status: Mapped[IngestionStatus] = mapped_column(
+        Enum(IngestionStatus, name="bundle_ingestion_status"), default=IngestionStatus.PENDING
+    )
+    sheet_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    owner_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
+    sheets: Mapped[list["SheetSource"]] = relationship(
+        back_populates="bundle", cascade="all, delete-orphan", order_by="SheetSource.position_index"
+    )
+    audits: Mapped[list["BundleAudit"]] = relationship(
+        back_populates="bundle",
+        cascade="all, delete-orphan",
+        order_by="BundleAudit.started_at.desc()",
+    )
+
+
+class SheetSource(Base):
+    __tablename__ = "sheet_sources"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    bundle_id: Mapped[str] = mapped_column(ForeignKey("source_bundles.id", ondelete="CASCADE"))
+    sheet_name: Mapped[str] = mapped_column(String(255))
+    display_label: Mapped[str] = mapped_column(String(255))
+    visibility_state: Mapped[SheetVisibilityState] = mapped_column(
+        Enum(SheetVisibilityState, name="sheet_visibility_state"), default=SheetVisibilityState.VISIBLE
+    )
+    status: Mapped[SheetStatus] = mapped_column(
+        Enum(SheetStatus, name="sheet_status"), default=SheetStatus.ACTIVE
+    )
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    column_schema: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    last_refreshed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    checksum: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    position_index: Mapped[int] = mapped_column(Integer, default=0)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+
+    bundle: Mapped[SourceBundle] = relationship(back_populates="sheets")
+    records: Mapped[list["QueryRecord"]] = relationship(back_populates="sheet")
+    metrics: Mapped[list["SheetMetric"]] = relationship(
+        back_populates="sheet", cascade="all, delete-orphan", order_by="SheetMetric.recorded_at.desc()"
+    )
+    query_links: Mapped[list["QuerySheetLink"]] = relationship(
+        back_populates="sheet", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("bundle_id", "sheet_name", name="uq_sheet_unique_per_bundle"),
+    )
+
+
+class BundleAudit(Base):
+    __tablename__ = "bundle_audits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    bundle_id: Mapped[str] = mapped_column(ForeignKey("source_bundles.id", ondelete="CASCADE"))
+    status: Mapped[AuditStatus] = mapped_column(Enum(AuditStatus, name="bundle_audit_status"))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sheet_summary: Mapped[Optional[dict[str, int]]] = mapped_column(JSON, nullable=True)
+    hidden_sheets_enabled: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    initiated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
+    bundle: Mapped[SourceBundle] = relationship(back_populates="audits")
+
+
+class SheetMetric(Base):
+    __tablename__ = "sheet_metrics"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    sheet_id: Mapped[str] = mapped_column(ForeignKey("sheet_sources.id", ondelete="CASCADE"))
+    metric_type: Mapped[SheetMetricType] = mapped_column(
+        Enum(SheetMetricType, name="sheet_metric_type")
+    )
+    p50: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    p95: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    sheet: Mapped[SheetSource] = relationship(back_populates="metrics")
+
+
+class QueryDefinition(Base):
+    __tablename__ = "query_definitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    validation_checksum: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    sheet_links: Mapped[list["QuerySheetLink"]] = relationship(
+        back_populates="query", cascade="all, delete-orphan"
+    )
+
+
+class QuerySheetLink(Base):
+    __tablename__ = "query_sheet_links"
+
+    query_id: Mapped[str] = mapped_column(
+        ForeignKey("query_definitions.id", ondelete="CASCADE"), primary_key=True
+    )
+    sheet_id: Mapped[str] = mapped_column(
+        ForeignKey("sheet_sources.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[QuerySheetRole] = mapped_column(
+        Enum(QuerySheetRole, name="query_sheet_role"), default=QuerySheetRole.PRIMARY
+    )
+    join_keys: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    query: Mapped[QueryDefinition] = relationship(back_populates="sheet_links")
+    sheet: Mapped[SheetSource] = relationship(back_populates="query_links")
+
+
 class QueryRecord(Base):
     __tablename__ = "query_records"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     data_file_id: Mapped[str] = mapped_column(ForeignKey("data_files.id", ondelete="CASCADE"))
+    sheet_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("sheet_sources.id", ondelete="SET NULL"), nullable=True
+    )
     column_name: Mapped[str] = mapped_column(String(255))
     row_index: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
@@ -91,6 +245,7 @@ class QueryRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     data_file: Mapped[DataFile] = relationship(back_populates="records")
+    sheet: Mapped[Optional[SheetSource]] = relationship(back_populates="records")
     embedding: Mapped["EmbeddingVector"] = relationship(
         back_populates="record", uselist=False, cascade="all, delete-orphan"
     )
