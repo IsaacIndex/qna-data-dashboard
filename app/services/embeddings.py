@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Sequence
 
 from app.db.metadata import MetadataRepository
-from app.db.schema import DataFile, QueryRecord
+from app.db.schema import DataFile, QueryRecord, SheetSource
 from app.services.chroma_client import get_chroma_client
 from app.utils.logging import get_logger
 
@@ -27,9 +27,10 @@ class EmbeddingSummary:
 
 @dataclass
 class EmbeddingJob:
-    data_file: DataFile
+    data_file: DataFile | None
     records: Sequence[QueryRecord]
     metadata_repository: MetadataRepository
+    sheet: SheetSource | None = None
 
 
 class EmbeddingService:
@@ -94,12 +95,13 @@ class EmbeddingService:
             return EmbeddingSummary(vector_count=0, model_name=self.requested_model_name, model_dimension=0)
 
         vectors, dimension, model_name = self._generate_embeddings(texts)
+        target_prefix, collection_display = self._resolve_target(job)
         collection = self.chroma_client.get_or_create_collection(
-            name=f"dataset_{job.data_file.id}",
-            metadata={"display_name": job.data_file.display_name},
+            name=target_prefix,
+            metadata={"display_name": collection_display},
         )
 
-        ids = [f"{job.data_file.id}-{index}" for index in range(len(texts))]
+        ids = [f"{target_prefix}-{index}" for index in range(len(texts))]
         collection.upsert(ids=ids, embeddings=vectors, documents=texts)
 
         for record, vector_id in zip(job.records, ids):
@@ -113,3 +115,10 @@ class EmbeddingService:
 
         job.metadata_repository.session.flush()  # type: ignore[attr-defined]
         return EmbeddingSummary(vector_count=len(texts), model_name=model_name, model_dimension=dimension)
+
+    def _resolve_target(self, job: EmbeddingJob) -> tuple[str, str]:
+        if job.sheet is not None:
+            return f"sheet_{job.sheet.id}", job.sheet.display_label
+        if job.data_file is not None:
+            return f"dataset_{job.data_file.id}", job.data_file.display_name
+        raise ValueError("EmbeddingJob requires either a sheet or data_file target.")

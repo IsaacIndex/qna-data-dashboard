@@ -69,6 +69,7 @@ data/chromadb/
 data/*.db
 data/**/*.db
 data/logs/
+data/bundles/
 *.db
 *.sqlite
 

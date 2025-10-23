@@ -41,7 +41,8 @@ def render_home(data_root: Path) -> None:
         ### Workflow
         1. Upload CSV or Excel files on **Ingest Datasets** and choose text columns.
         2. Explore the corpus with semantic filtering on **Search**.
-        3. Review redundancy and diversity metrics on **Coverage Analytics**.
+        3. Build cross-sheet previews and validate joins in **Query Builder**.
+        4. Review redundancy and diversity metrics on **Coverage Analytics**.
         """
     )
 
@@ -55,6 +56,7 @@ def run() -> None:
         st.markdown(
             "- **Ingest Datasets**: Upload files, map columns, build embeddings.\n"
             "- **Search**: Query the corpus with semantic filters.\n"
+            "- **Query Builder**: Combine sheet sources, configure joins, and preview results.\n"
             "- **Coverage Analytics**: Visualize redundancy and cluster health."
         )
         st.divider()

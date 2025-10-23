@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from typing import Iterable, Sequence
 
 from app.db.metadata import MetadataRepository
-from app.db.schema import MetricType, QueryRecord
+from app.db.schema import MetricType, QueryRecord, SheetMetricType, SheetSource
 from app.utils.logging import get_logger
 
 LOGGER = get_logger(__name__)
@@ -18,6 +18,8 @@ class SearchResult:
     record_id: str
     dataset_id: str
     dataset_name: str
+    sheet_id: str | None
+    sheet_label: str | None
     column_name: str
     row_index: int
     text: str
@@ -29,6 +31,8 @@ class SearchResult:
             "record_id": self.record_id,
             "dataset_id": self.dataset_id,
             "dataset_name": self.dataset_name,
+            "sheet_id": self.sheet_id,
+            "sheet_label": self.sheet_label,
             "column_name": self.column_name,
             "row_index": self.row_index,
             "text": self.text,
@@ -67,7 +71,7 @@ class SearchService:
             return []
         start = time.perf_counter()
         candidates = self._load_candidates(dataset_ids=dataset_ids, column_names=column_names)
-        scored = self._score_candidates(text, candidates, min_similarity=min_similarity)
+        scored, sheet_lookup = self._score_candidates(text, candidates, min_similarity=min_similarity)
         scored.sort(key=lambda entry: entry.similarity, reverse=True)
         results = scored[: max(1, limit)]
 
@@ -86,6 +90,14 @@ class SearchService:
                 p95_ms=elapsed_ms,
                 records_per_second=records_per_second,
             )
+            for result in results:
+                if result.sheet_id and result.sheet_id in sheet_lookup:
+                    self.metadata_repository.record_sheet_metric(
+                        sheet=sheet_lookup[result.sheet_id],
+                        metric_type=SheetMetricType.QUERY_P95_MS,
+                        p50=elapsed_ms,
+                        p95=elapsed_ms,
+                    )
             self.metadata_repository.session.commit()  # type: ignore[attr-defined]
         except Exception as error:  # pragma: no cover - metrics failure should not break search
             LOGGER.warning("Failed to record search performance metric: %s", error)
@@ -113,18 +125,24 @@ class SearchService:
         candidates: Iterable[QueryRecord],
         *,
         min_similarity: float,
-    ) -> list[SearchResult]:
+    ) -> tuple[list[SearchResult], dict[str, SheetSource]]:
         results: list[SearchResult] = []
+        sheet_lookup: dict[str, SheetSource] = {}
         for record in candidates:
             similarity = self._compute_similarity(query, record.text)
             if similarity < min_similarity:
                 continue
             dataset = record.data_file
+            sheet = record.sheet
+            if sheet is not None:
+                sheet_lookup[sheet.id] = sheet
             results.append(
                 SearchResult(
                     record_id=record.id,
                     dataset_id=record.data_file_id,
                     dataset_name=dataset.display_name if dataset else "",
+                    sheet_id=sheet.id if sheet else None,
+                    sheet_label=sheet.display_label if sheet else None,
                     column_name=record.column_name,
                     row_index=record.row_index,
                     text=record.text,
@@ -132,10 +150,13 @@ class SearchService:
                     metadata={
                         "original_text": record.original_text,
                         "tags": record.tags or [],
+                        "sheet_id": sheet.id if sheet else None,
+                        "sheet_label": sheet.display_label if sheet else None,
+                        "bundle_id": sheet.bundle_id if sheet else None,
                     },
                 )
             )
-        return results
+        return results, sheet_lookup
 
     def _compute_similarity(self, first: str, second: str) -> float:
         if not second:

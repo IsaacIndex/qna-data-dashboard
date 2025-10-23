@@ -135,7 +135,32 @@ def test_ingest_excel_sheet_selection(
     ]
 
 
-def test_ingest_missing_column_raises_error(
+def test_ingest_missing_column_skips_but_continues(
+    tmp_path: Path,
+    temp_data_root: Path,
+    metadata_repository: MetadataRepository,
+    embedding_service: DummyEmbeddingService,
+) -> None:
+    source = tmp_path / "faq.csv"
+    _write_csv(source)
+    service = _build_service(metadata_repository, embedding_service, temp_data_root)
+
+    result = service.ingest_file(
+        source_path=source,
+        display_name="FAQ Import",
+        options=IngestionOptions(selected_columns=["question", "missing"]),
+    )
+
+    assert result.data_file.ingestion_status == IngestionStatus.READY
+    assert result.data_file.selected_columns == ["question"]
+
+    job = embedding_service.jobs[0]
+    assert len(embedding_service.jobs) == 1
+    assert {record.column_name for record in job.records} == {"question"}
+    assert len(job.records) == 2
+
+
+def test_ingest_all_missing_columns_raises_error(
     tmp_path: Path,
     temp_data_root: Path,
     metadata_repository: MetadataRepository,
