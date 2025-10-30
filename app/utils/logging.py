@@ -7,7 +7,7 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, MutableMapping
+from typing import Any, MutableMapping, Sequence
 
 DEFAULT_LOG_LEVEL = os.getenv("QNA_LOG_LEVEL", "INFO")
 DEFAULT_LOG_DIR = Path(os.getenv("QNA_LOG_DIR", "data/logs"))
@@ -106,6 +106,28 @@ class ConsoleFormatter(logging.Formatter):
 
 def log_event(logger: logging.Logger, event: str, **extra: Any) -> None:
     logger.info(_format_event(event, extra))
+
+
+def log_missing_columns(
+    logger: logging.Logger,
+    *,
+    dataset_id: str,
+    dataset_name: str,
+    columns: Sequence[str],
+) -> None:
+    if not columns:
+        return
+    logger.warning(
+        _format_event(
+            "search.context.missing_columns",
+            {
+                "dataset_id": dataset_id,
+                "dataset_name": dataset_name,
+                "missing_columns": list(columns),
+                "count": len(columns),
+            },
+        )
+    )
 
 
 @contextmanager

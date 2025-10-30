@@ -15,8 +15,9 @@ poetry run qna-dashboard
 ## Configure Display Columns
 1. Navigate to **Search** page.
 2. In the **Result Columns** panel, choose a dataset.
-3. Use the multiselect list to pick up to 10 supplemental columns; drag to reorder.
-4. Click **Save Preferences**. A confirmation toast should list the selected fields.
+3. Select up to 10 supplemental columns. The table below the picker lets you rename labels and adjust their `Order` value to control display sequence.
+4. Click **Save Preferences** to persist the selection. A confirmation toast should list the saved fields and order.
+5. To revert a dataset to baseline metadata, use **Reset to Defaults**; the panel clears the selection immediately and reloads the catalog.
 
 ## Validate Search Rendering
 1. Enter a representative query.

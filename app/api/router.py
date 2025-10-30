@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.metadata import (
     MetadataRepository,
@@ -34,6 +37,57 @@ from app.services.query_builder import (
     QuerySheetSelection,
     QueryValidationError,
 )
+from app.services.preferences import ColumnPreferenceService, PreferenceSnapshot, SelectedColumn
+
+
+class SelectedColumnPayload(BaseModel):
+    column_name: Annotated[str, Field(alias="columnName")]
+    display_label: Annotated[str, Field(alias="displayLabel")]
+    position: Annotated[int, Field(alias="position", ge=0)]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UpdateColumnPreferenceRequest(BaseModel):
+    dataset_id: Annotated[str, Field(alias="datasetId")]
+    user_id: Annotated[str | None, Field(alias="userId", default=None)]
+    selected_columns: Annotated[
+        list[SelectedColumnPayload],
+        Field(alias="selectedColumns", default_factory=list),
+    ]
+    max_columns: Annotated[int | None, Field(alias="maxColumns", default=None)]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ColumnPreferenceResponse(BaseModel):
+    dataset_id: Annotated[str, Field(alias="datasetId")]
+    user_id: Annotated[str | None, Field(alias="userId", default=None)]
+    selected_columns: Annotated[
+        list[SelectedColumnPayload],
+        Field(alias="selectedColumns", default_factory=list),
+    ]
+    max_columns: Annotated[int, Field(alias="maxColumns")]
+    updated_at: Annotated[datetime, Field(alias="updatedAt")]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DisplayableColumnResponse(BaseModel):
+    column_name: Annotated[str, Field(alias="columnName")]
+    display_label: Annotated[str, Field(alias="displayLabel")]
+    data_type: Annotated[str | None, Field(alias="dataType", default=None)]
+    is_available: Annotated[bool, Field(alias="isAvailable")]
+    last_seen_at: Annotated[datetime | None, Field(alias="lastSeenAt", default=None)]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ColumnCatalogResponse(BaseModel):
+    dataset_id: Annotated[str, Field(alias="datasetId")]
+    columns: list[DisplayableColumnResponse]
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 def create_app(
@@ -77,6 +131,9 @@ def create_app(
 
     def get_query_builder_service(repo: MetadataRepository = Depends(get_repository)):
         return QueryBuilderService(metadata_repository=repo)
+
+    def get_preference_service(repo: MetadataRepository = Depends(get_repository)):
+        return ColumnPreferenceService(metadata_repository=repo)
 
     def _split_csv(value: str | None) -> list[str] | None:
         if not value:
@@ -157,6 +214,101 @@ def create_app(
             "sheetSummary": audit.sheet_summary,
             "hiddenSheetsEnabled": audit.hidden_sheets_enabled,
         }
+
+    def _to_preference_response(snapshot: PreferenceSnapshot) -> ColumnPreferenceResponse:
+        return ColumnPreferenceResponse(
+            dataset_id=snapshot.dataset_id,
+            user_id=snapshot.user_id,
+            selected_columns=[
+                SelectedColumnPayload(
+                    column_name=column.column_name,
+                    display_label=column.display_label,
+                    position=column.position,
+                )
+                for column in snapshot.selected_columns
+            ],
+            max_columns=snapshot.max_columns,
+            updated_at=snapshot.updated_at,
+        )
+
+    def _snapshot_from_request(payload: UpdateColumnPreferenceRequest) -> PreferenceSnapshot:
+        max_columns = payload.max_columns if payload.max_columns is not None else 10
+        return PreferenceSnapshot(
+            dataset_id=payload.dataset_id,
+            user_id=payload.user_id,
+            selected_columns=[
+                SelectedColumn(
+                    column_name=column.column_name,
+                    display_label=column.display_label,
+                    position=column.position,
+                )
+                for column in payload.selected_columns
+            ],
+            max_columns=max_columns,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    @app.get(
+        "/preferences/columns/catalog",
+        response_model=ColumnCatalogResponse,
+        response_model_by_alias=True,
+    )
+    def list_column_catalog(
+        dataset_id: Annotated[str, Query(alias="datasetId")],
+        service: ColumnPreferenceService = Depends(get_preference_service),
+    ) -> ColumnCatalogResponse:
+        catalog = service.fetch_catalog(dataset_id)
+        columns = [
+            DisplayableColumnResponse(
+                column_name=entry.column_name,
+                display_label=entry.display_label,
+                data_type=entry.data_type,
+                is_available=entry.is_available,
+                last_seen_at=entry.last_seen_at,
+            )
+            for entry in catalog
+        ]
+        return ColumnCatalogResponse(dataset_id=dataset_id, columns=columns)
+
+    @app.get(
+        "/preferences/columns",
+        response_model=ColumnPreferenceResponse,
+        response_model_by_alias=True,
+    )
+    def load_column_preference(
+        dataset_id: Annotated[str, Query(alias="datasetId")],
+        user_id: Annotated[str | None, Query(alias="userId")]=None,
+        service: ColumnPreferenceService = Depends(get_preference_service),
+    ) -> ColumnPreferenceResponse:
+        snapshot = service.load_preference(dataset_id=dataset_id, user_id=user_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Preference not found.")
+        return _to_preference_response(snapshot)
+
+    @app.put(
+        "/preferences/columns",
+        response_model=ColumnPreferenceResponse,
+        response_model_by_alias=True,
+    )
+    def save_column_preference(
+        payload: UpdateColumnPreferenceRequest,
+        service: ColumnPreferenceService = Depends(get_preference_service),
+    ) -> ColumnPreferenceResponse:
+        snapshot = _snapshot_from_request(payload)
+        try:
+            saved = service.save_preference(snapshot)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _to_preference_response(saved)
+
+    @app.delete("/preferences/columns", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_column_preference(
+        dataset_id: Annotated[str, Query(alias="datasetId")],
+        user_id: Annotated[str | None, Query(alias="userId")]=None,
+        service: ColumnPreferenceService = Depends(get_preference_service),
+    ) -> Response:
+        service.reset_preference(dataset_id, user_id=user_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     def _parse_preview_request(payload: dict[str, object]) -> QueryPreviewRequest:
         sheets_payload = payload.get("sheets")

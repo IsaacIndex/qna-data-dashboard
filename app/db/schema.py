@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -98,6 +98,11 @@ class DataFile(Base):
         back_populates="data_file",
         cascade="all, delete-orphan",
         order_by="IngestionAudit.started_at.desc()",
+    )
+    column_preferences: Mapped[list["ColumnPreference"]] = relationship(
+        back_populates="data_file",
+        cascade="all, delete-orphan",
+        order_by="ColumnPreference.updated_at.desc()",
     )
 
 
@@ -343,3 +348,46 @@ class PerformanceMetric(Base):
 
     data_file: Mapped[Optional[DataFile]] = relationship()
     cluster: Mapped[Optional[SimilarityCluster]] = relationship()
+
+
+class ColumnPreference(Base):
+    __tablename__ = "column_preferences"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    data_file_id: Mapped[str] = mapped_column(ForeignKey("data_files.id", ondelete="CASCADE"))
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    selected_columns: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    max_columns: Mapped[int] = mapped_column(Integer, default=10)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    data_file: Mapped[DataFile] = relationship(back_populates="column_preferences")
+    changes: Mapped[list["ColumnPreferenceChange"]] = relationship(
+        back_populates="preference",
+        cascade="all, delete-orphan",
+        order_by="ColumnPreferenceChange.changed_at.desc()",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("data_file_id", "user_id", name="uq_column_preference_dataset_user"),
+    )
+
+
+class ColumnPreferenceChange(Base):
+    __tablename__ = "column_preference_changes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    preference_id: Mapped[str] = mapped_column(
+        ForeignKey("column_preferences.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str] = mapped_column(String(64))
+    dataset_display_name: Mapped[str] = mapped_column(String(255))
+    selected_columns_snapshot: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    preference: Mapped[ColumnPreference] = relationship(back_populates="changes")

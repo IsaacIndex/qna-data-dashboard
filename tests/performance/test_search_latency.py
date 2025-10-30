@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("pytest_benchmark", reason="pytest-benchmark plugin not available")
 
 from app.db.metadata import MetadataRepository
-from app.db.schema import MetricType, PerformanceMetric
+from app.db.schema import ColumnPreference, MetricType, PerformanceMetric
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
 from app.services.ingestion import IngestionOptions, IngestionService
 from app.services.search import SearchService
@@ -32,12 +32,32 @@ class BenchmarkEmbeddingStub:
         return vectors, 1, "stub-model"
 
 
-def _write_csv(path: Path, rows: int = 1000) -> None:
+def _write_csv(path: Path, rows: int = 1000, extra_columns: int = 0) -> None:
+    fieldnames = ["question"] + [f"context_{index}" for index in range(extra_columns)]
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["question"])
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for index in range(rows):
-            writer.writerow({"question": f"How to reset password #{index}?"})
+            row = {"question": f"How to reset password #{index}?"}
+            for column_index in range(extra_columns):
+                row[f"context_{column_index}"] = f"value_{column_index}_{index}"
+            writer.writerow(row)
+
+
+def _save_preference(repo: MetadataRepository, dataset_id: str, *, column_count: int) -> None:
+    selected_columns = [
+        {"column_name": f"context_{index}", "display_label": f"Context {index}", "position": index}
+        for index in range(column_count)
+    ]
+    preference = ColumnPreference(
+        data_file_id=dataset_id,
+        user_id=None,
+        selected_columns=selected_columns,
+        max_columns=column_count,
+        is_active=True,
+    )
+    repo.session.add(preference)
+    repo.session.commit()
 
 
 @pytest.mark.benchmark(group="search")
@@ -57,12 +77,13 @@ def test_search_latency_under_budget(
     )
 
     dataset_path = tmp_path / "search.csv"
-    _write_csv(dataset_path, rows=1500)
+    _write_csv(dataset_path, rows=1500, extra_columns=10)
     dataset = ingestion.ingest_file(
         source_path=dataset_path,
         display_name="Benchmark Dataset",
         options=IngestionOptions(selected_columns=["question"]),
     ).data_file
+    _save_preference(metadata_repository, dataset_id=dataset.id, column_count=10)
 
     service = SearchService(
         metadata_repository=metadata_repository,
@@ -75,6 +96,7 @@ def test_search_latency_under_budget(
 
     results = benchmark(run_search)
     assert results, "Expected search results from benchmark run"
+    assert all(len(result.contextual_columns) == 10 for result in results)
 
     metric = (
         db_session.query(PerformanceMetric)
