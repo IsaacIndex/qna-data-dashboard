@@ -24,4 +24,5 @@ tests/
 
 <!-- MANUAL ADDITIONS START -->
 - Ingestion UI now lists unique columns across all sheets to help analysts choose trial embeddings.
+- Search results support dataset-specific contextual columns with saved analyst preferences.
 <!-- MANUAL ADDITIONS END -->

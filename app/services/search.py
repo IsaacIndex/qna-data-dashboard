@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Iterable, Sequence
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import MetricType, QueryRecord, SheetMetricType, SheetSource
-from app.utils.logging import get_logger
+from app.utils.logging import get_logger, log_missing_columns
 
 LOGGER = get_logger(__name__)
 
@@ -25,6 +25,8 @@ class SearchResult:
     text: str
     similarity: float
     metadata: dict[str, object]
+    contextual_columns: dict[str, object] = field(default_factory=dict)
+    missing_columns: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -38,6 +40,8 @@ class SearchResult:
             "text": self.text,
             "similarity": self.similarity,
             "metadata": self.metadata,
+            "contextual_columns": self.contextual_columns,
+            "missing_columns": self.missing_columns,
         }
 
 
@@ -71,9 +75,17 @@ class SearchService:
             return []
         start = time.perf_counter()
         candidates = self._load_candidates(dataset_ids=dataset_ids, column_names=column_names)
-        scored, sheet_lookup = self._score_candidates(text, candidates, min_similarity=min_similarity)
+        scored, sheet_lookup, record_lookup = self._score_candidates(
+            text, candidates, min_similarity=min_similarity
+        )
         scored.sort(key=lambda entry: entry.similarity, reverse=True)
         results = scored[: max(1, limit)]
+        selected_records = {
+            result.record_id: record_lookup[result.record_id]
+            for result in results
+            if result.record_id in record_lookup
+        }
+        self._hydrate_contextual_columns(results, selected_records)
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         if elapsed_ms <= 0:
@@ -125,9 +137,10 @@ class SearchService:
         candidates: Iterable[QueryRecord],
         *,
         min_similarity: float,
-    ) -> tuple[list[SearchResult], dict[str, SheetSource]]:
+    ) -> tuple[list[SearchResult], dict[str, SheetSource], dict[str, QueryRecord]]:
         results: list[SearchResult] = []
         sheet_lookup: dict[str, SheetSource] = {}
+        record_lookup: dict[str, QueryRecord] = {}
         for record in candidates:
             similarity = self._compute_similarity(query, record.text)
             if similarity < min_similarity:
@@ -136,6 +149,7 @@ class SearchService:
             sheet = record.sheet
             if sheet is not None:
                 sheet_lookup[sheet.id] = sheet
+            record_lookup[record.id] = record
             results.append(
                 SearchResult(
                     record_id=record.id,
@@ -156,7 +170,69 @@ class SearchService:
                     },
                 )
             )
-        return results, sheet_lookup
+        return results, sheet_lookup, record_lookup
+
+    def _hydrate_contextual_columns(
+        self,
+        results: Sequence[SearchResult],
+        record_lookup: dict[str, QueryRecord],
+    ) -> None:
+        if not results:
+            return
+
+        grouped: dict[str, list[tuple[SearchResult, QueryRecord]]] = {}
+        for result in results:
+            record = record_lookup.get(result.record_id)
+            if record is None:
+                continue
+            grouped.setdefault(result.dataset_id, []).append((result, record))
+
+        for dataset_id, pairs in grouped.items():
+            preference = self.metadata_repository.get_column_preference(
+                data_file_id=dataset_id,
+                user_id=None,
+            )
+            if preference is None or not preference.selected_columns:
+                continue
+            ordered = sorted(
+                preference.selected_columns,
+                key=lambda entry: entry.get("position", 0),
+            )
+            if not ordered:
+                continue
+
+            dataset_missing: set[str] = set()
+            dataset_label = pairs[0][1].data_file.display_name if pairs[0][1].data_file else dataset_id
+
+            for result, record in pairs:
+                row_values = self.metadata_repository.get_row_values(record)
+                contextual: dict[str, object] = {}
+                missing: list[str] = []
+                labels: dict[str, str] = {}
+                for selection in ordered:
+                    column = selection.get("column_name")
+                    if not column:
+                        continue
+                    label = selection.get("display_label") or column
+                    value = row_values.get(column)
+                    if value is None:
+                        missing.append(column)
+                    elif isinstance(value, str) and not value.strip():
+                        missing.append(column)
+                    contextual[column] = value
+                    labels[column] = label
+                result.contextual_columns = contextual
+                result.missing_columns = missing
+                result.metadata["contextual_labels"] = labels
+                for column in missing:
+                    dataset_missing.add(labels.get(column, column))
+            if dataset_missing:
+                log_missing_columns(
+                    LOGGER,
+                    dataset_id=dataset_id,
+                    dataset_name=dataset_label,
+                    columns=sorted(dataset_missing),
+                )
 
     def _compute_similarity(self, first: str, second: str) -> float:
         if not second:

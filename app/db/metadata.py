@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import csv
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
+
+try:  # pragma: no cover - optional dependency for Excel datasets
+    from openpyxl import load_workbook
+except ImportError:  # pragma: no cover - handled during hydration
+    load_workbook = None
 
 from sqlalchemy import Select, create_engine, delete, select
 from sqlalchemy.engine import Engine
@@ -14,14 +20,16 @@ from .migrations import run_migrations
 from .schema import (
     AuditStatus,
     Base,
+    BundleAudit,
     ClusterMembership,
+    ColumnPreference,
+    ColumnPreferenceChange,
     DataFile,
     EmbeddingVector,
     FileType,
     IngestionAudit,
     IngestionStatus,
     MetricType,
-    BundleAudit,
     PerformanceMetric,
     QueryDefinition,
     QueryRecord,
@@ -80,6 +88,8 @@ class MetadataRepository:
 
     def __init__(self, session: Session):
         self.session = session
+        self._row_cache: dict[tuple[str, str | None], list[dict[str, object]]] = {}
+        self._sheet_cache: dict[str, SheetSource | None] = {}
 
     # Dataset helpers -----------------------------------------------------
     def list_data_files(self) -> Sequence[DataFile]:
@@ -585,6 +595,206 @@ class MetadataRepository:
         )
         return self.session.execute(stmt).scalars().first()
 
+    # Column preferences ------------------------------------------------
+    def get_column_preference(
+        self,
+        *,
+        data_file_id: str,
+        user_id: str | None,
+        include_inactive: bool = False,
+    ) -> ColumnPreference | None:
+        stmt = select(ColumnPreference).where(ColumnPreference.data_file_id == data_file_id)
+        if user_id is None:
+            stmt = stmt.where(ColumnPreference.user_id.is_(None))
+        else:
+            stmt = stmt.where(ColumnPreference.user_id == user_id)
+        if not include_inactive:
+            stmt = stmt.where(ColumnPreference.is_active.is_(True))
+        stmt = stmt.order_by(ColumnPreference.updated_at.desc())
+        return self.session.execute(stmt).scalars().first()
+
+    def save_column_preference(
+        self,
+        *,
+        data_file_id: str,
+        user_id: str | None,
+        selected_columns: Sequence[dict[str, object]],
+        max_columns: int,
+        allowed_columns: set[str] | None = None,
+        actor_user_id: str | None = None,
+    ) -> ColumnPreference:
+        normalized = self._normalize_preference_columns(
+            selected_columns,
+            data_file_id=data_file_id,
+            max_columns=max_columns,
+            allowed_columns=allowed_columns,
+        )
+        record = self.get_column_preference(
+            data_file_id=data_file_id,
+            user_id=user_id,
+            include_inactive=True,
+        )
+        if record is None:
+            record = ColumnPreference(
+                data_file_id=data_file_id,
+                user_id=user_id,
+                selected_columns=normalized,
+                max_columns=max_columns,
+                is_active=True,
+            )
+            self.session.add(record)
+        else:
+            record.selected_columns = normalized
+            record.max_columns = max_columns
+            record.is_active = True
+            record.updated_at = datetime.now(timezone.utc)
+        self.session.flush()
+        self._record_preference_change(
+            preference=record,
+            user_id=actor_user_id or user_id,
+        )
+        return record
+
+    def reset_column_preference(
+        self,
+        *,
+        data_file_id: str,
+        user_id: str | None,
+        actor_user_id: str | None = None,
+    ) -> None:
+        record = self.get_column_preference(
+            data_file_id=data_file_id,
+            user_id=user_id,
+            include_inactive=True,
+        )
+        if record is None:
+            return
+        record.is_active = False
+        record.selected_columns = []
+        record.updated_at = datetime.now(timezone.utc)
+        self.session.flush()
+        self._record_preference_change(
+            preference=record,
+            user_id=actor_user_id or user_id,
+        )
+
+    def list_displayable_column_catalog(self, data_file_id: str) -> list[dict[str, object]]:
+        data_file = self.get_data_file(data_file_id)
+        if data_file is None:
+            return []
+
+        rows = self._load_dataset_rows(data_file, sheet_name=None)
+        sample_limit = 500
+        samples: dict[str, list[object | None]] = {}
+
+        for row in rows:
+            for column, value in row.items():
+                if not column:
+                    continue
+                bucket = samples.setdefault(column, [])
+                if len(bucket) < sample_limit:
+                    bucket.append(value)
+
+        if not samples:
+            for column in data_file.selected_columns or []:
+                if column:
+                    samples.setdefault(column, [])
+
+        timestamp = data_file.processed_at or data_file.ingested_at
+        catalog: list[dict[str, object]] = []
+        for column, values in sorted(samples.items(), key=lambda item: item[0].lower()):
+            catalog.append(
+                {
+                    "column_name": column,
+                    "column_label": column,
+                    "data_type": self._infer_value_type(values),
+                    "is_available": True,
+                    "last_seen_at": timestamp,
+                }
+            )
+        return catalog
+
+    def list_column_preference_changes(self, preference_id: str) -> Sequence[ColumnPreferenceChange]:
+        stmt = (
+            select(ColumnPreferenceChange)
+            .where(ColumnPreferenceChange.preference_id == preference_id)
+            .order_by(ColumnPreferenceChange.changed_at.desc())
+        )
+        return self.session.execute(stmt).scalars().all()
+
+    def _normalize_preference_columns(
+        self,
+        selections: Sequence[dict[str, object]],
+        *,
+        data_file_id: str,
+        max_columns: int,
+        allowed_columns: set[str] | None,
+    ) -> list[dict[str, object]]:
+        if max_columns < 1:
+            raise ValueError("max_columns must be at least 1.")
+
+        normalized: list[dict[str, object]] = []
+        seen: set[str] = set()
+        sorted_entries = sorted(selections, key=lambda entry: int(entry.get("position", 0)))
+        for entry in sorted_entries:
+            name = str(entry.get("column_name", "")).strip()
+            if not name:
+                continue
+            if allowed_columns is not None and name not in allowed_columns:
+                raise ValueError(f"Unknown columns for dataset {data_file_id}: {name}.")
+            if name in seen:
+                raise ValueError(f"Duplicate columns are not allowed: {name}.")
+            seen.add(name)
+            label = str(entry.get("display_label", name)).strip() or name
+            normalized.append(
+                {
+                    "column_name": name,
+                    "display_label": label,
+                    "position": len(normalized),
+                }
+            )
+
+        if len(normalized) > max_columns:
+            raise ValueError(
+                f"Selection exceeds the maximum allowed columns ({max_columns})."
+            )
+        return normalized
+
+    def _record_preference_change(
+        self,
+        *,
+        preference: ColumnPreference,
+        user_id: str | None,
+        dataset_display_name: str | None = None,
+    ) -> ColumnPreferenceChange:
+        actor = user_id or "system"
+        display_name = dataset_display_name
+        if not display_name:
+            data_file = preference.data_file or self.get_data_file(preference.data_file_id)
+            display_name = data_file.display_name if data_file else preference.data_file_id
+        change = ColumnPreferenceChange(
+            preference_id=preference.id,
+            user_id=actor,
+            dataset_display_name=display_name,
+            selected_columns_snapshot=list(preference.selected_columns),
+        )
+        self.session.add(change)
+        return change
+
+    def get_row_values(self, record: QueryRecord) -> dict[str, object]:
+        data_file = record.data_file or self.get_data_file(record.data_file_id)
+        if data_file is None:
+            return {}
+
+        sheet_name: str | None = None
+        if record.sheet_id:
+            sheet_name = self._resolve_sheet_name(record.sheet_id)
+
+        rows = self._load_dataset_rows(data_file, sheet_name=sheet_name)
+        if record.row_index < 0 or record.row_index >= len(rows):
+            return {}
+        return rows[record.row_index]
+
     # Performance metrics -------------------------------------------------
     def record_performance_metric(
         self,
@@ -608,3 +818,88 @@ class MetadataRepository:
         )
         self.session.add(metric)
         return metric
+
+    def _resolve_sheet_name(self, sheet_id: str) -> str | None:
+        if sheet_id in self._sheet_cache:
+            sheet = self._sheet_cache[sheet_id]
+            return sheet.sheet_name if sheet else None
+        sheet = self.session.get(SheetSource, sheet_id)
+        self._sheet_cache[sheet_id] = sheet
+        if sheet is None:
+            return None
+        return sheet.sheet_name
+
+    def _load_dataset_rows(self, data_file: DataFile, *, sheet_name: str | None) -> list[dict[str, object]]:
+        sheet_key = sheet_name or "__default__"
+        cache_key = (data_file.id, sheet_key)
+        if cache_key in self._row_cache:
+            return self._row_cache[cache_key]
+
+        path = Path(data_file.original_path)
+        if not path.exists():
+            self._row_cache[cache_key] = []
+            return []
+
+        if data_file.file_type == FileType.CSV:
+            delimiter = data_file.delimiter or ","
+            rows = self._load_csv_rows(path=path, delimiter=delimiter)
+        else:
+            rows = self._load_excel_rows(path=path, sheet_name=sheet_name or data_file.sheet_name)
+
+        self._row_cache[cache_key] = rows
+        return rows
+
+    def _load_csv_rows(self, *, path: Path, delimiter: str) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter=delimiter)
+            for raw_row in reader:
+                row_map: dict[str, object] = {}
+                for key, value in raw_row.items():
+                    if not key:
+                        continue
+                    row_map[key] = value
+                rows.append(row_map)
+        return rows
+
+    def _load_excel_rows(self, *, path: Path, sheet_name: str | None) -> list[dict[str, object]]:
+        if load_workbook is None:
+            raise RuntimeError(
+                "Excel contextual column hydration requires the 'openpyxl' dependency to be installed."
+            )
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        try:
+            target_sheet = sheet_name or workbook.sheetnames[0]
+            if target_sheet not in workbook.sheetnames:
+                target_sheet = workbook.sheetnames[0]
+            sheet = workbook[target_sheet]
+            iterator = sheet.iter_rows(values_only=True)
+            try:
+                headers_row = next(iterator)
+            except StopIteration:
+                return []
+            columns = [str(value) if value is not None else "" for value in headers_row]
+            rows: list[dict[str, object]] = []
+            for values in iterator:
+                row_map: dict[str, object] = {}
+                for index, column in enumerate(columns):
+                    if not column:
+                        continue
+                    cell_value = None
+                    if values is not None and index < len(values):
+                        cell_value = values[index]
+                    row_map[column] = cell_value
+                rows.append(row_map)
+            return rows
+        finally:
+            workbook.close()
+
+    def _infer_value_type(self, values: Sequence[object | None]) -> str:
+        non_null = [value for value in values if value not in (None, "")]
+        if not non_null:
+            return "string"
+        if all(isinstance(value, (int, float)) for value in non_null):
+            return "number"
+        if all(isinstance(value, bool) for value in non_null):
+            return "boolean"
+        return "string"
