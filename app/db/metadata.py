@@ -35,6 +35,7 @@ from .schema import (
     QueryRecord,
     QuerySheetLink,
     QuerySheetRole,
+    PreferenceMirror,
     SheetMetric,
     SheetMetricType,
     SheetSource,
@@ -677,6 +678,60 @@ class MetadataRepository:
             preference=record,
             user_id=actor_user_id or user_id,
         )
+
+    def get_preference_mirror(
+        self,
+        *,
+        data_file_id: str,
+        device_id: str | None,
+    ) -> PreferenceMirror | None:
+        stmt = select(PreferenceMirror).where(PreferenceMirror.data_file_id == data_file_id)
+        if device_id is None:
+            stmt = stmt.where(PreferenceMirror.device_id.is_(None))
+        else:
+            stmt = stmt.where(PreferenceMirror.device_id == device_id)
+        stmt = stmt.order_by(PreferenceMirror.updated_at.desc())
+        return self.session.execute(stmt).scalars().first()
+
+    def upsert_preference_mirror(
+        self,
+        *,
+        data_file_id: str,
+        device_id: str | None,
+        selected_columns: Sequence[dict[str, object]],
+        max_columns: int,
+        version: int = 0,
+        source: str | None = None,
+    ) -> PreferenceMirror:
+        sanitized_max = max(max_columns, 1)
+        normalized = self._normalize_preference_columns(
+            selected_columns,
+            data_file_id=data_file_id,
+            max_columns=sanitized_max,
+            allowed_columns=None,
+        )
+
+        record = self.get_preference_mirror(data_file_id=data_file_id, device_id=device_id)
+        if record is None:
+            record = PreferenceMirror(
+                data_file_id=data_file_id,
+                device_id=device_id,
+                selected_columns=normalized,
+                max_columns=sanitized_max,
+                version=version,
+                source=source,
+                updated_at=datetime.now(timezone.utc),
+            )
+            self.session.add(record)
+        else:
+            record.selected_columns = normalized
+            record.max_columns = sanitized_max
+            record.version = version
+            record.source = source or record.source
+            record.updated_at = datetime.now(timezone.utc)
+
+        self.session.flush()
+        return record
 
     def list_displayable_column_catalog(self, data_file_id: str) -> list[dict[str, object]]:
         data_file = self.get_data_file(data_file_id)

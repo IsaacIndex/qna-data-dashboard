@@ -1,0 +1,335 @@
+openapi: 3.0.3
+info:
+  title: Q&A Dashboard UX Refresh Contracts
+  version: "0.1.0"
+  description: >
+    Contracts for refreshed dashboard flows: search with similarity legend, deduplicated column catalog,
+    device-local preference mirroring, and local analytics events.
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI service
+paths:
+  /datasets/{datasetId}/columns/catalog:
+    get:
+      summary: List deduplicated columns across all sheets for a dataset
+      tags: [columns]
+      parameters:
+        - name: datasetId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: includeUnavailable
+          in: query
+          required: false
+          description: Include columns with missing/unusable headers, returned as availability=unavailable
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Deduplicated column catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColumnCatalogResponse"
+  /search:
+    get:
+      summary: Run semantic search with contextual columns and similarity legend
+      tags: [search]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Natural language query
+          schema:
+            type: string
+        - name: datasetIds
+          in: query
+          required: false
+          description: Comma-separated dataset IDs to scope search
+          schema:
+            type: string
+        - name: columnNames
+          in: query
+          required: false
+          description: Comma-separated column names to filter contextual display
+          schema:
+            type: string
+        - name: minSimilarityPercent
+          in: query
+          required: false
+          description: Minimum similarity threshold (0-100)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 100
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Search results with similarity metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+  /preferences/columns/mirror:
+    post:
+      summary: Best-effort mirror of device-local column preferences for auditing
+      tags: [preferences]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreferenceMirrorRequest"
+      responses:
+        "202":
+          description: Mirror accepted (non-blocking)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreferenceMirrorResponse"
+  /preferences/columns/mirror:
+    get:
+      summary: Fetch last mirrored preference snapshot (optional, non-blocking for UI)
+      tags: [preferences]
+      parameters:
+        - name: datasetId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Last mirrored preference, if any
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreferenceMirrorResponse"
+        "204":
+          description: No mirrored preference found
+  /events/analytics:
+    post:
+      summary: Record local analytics events (latency, persistence outcomes)
+      tags: [analytics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyticsEvent"
+      responses:
+        "202":
+          description: Event accepted for local logging/buffering
+components:
+  schemas:
+    ColumnCatalogResponse:
+      type: object
+      properties:
+        datasetId:
+          type: string
+        columns:
+          type: array
+          items:
+            $ref: "#/components/schemas/ColumnCatalogItem"
+    ColumnCatalogItem:
+      type: object
+      properties:
+        columnName:
+          type: string
+        displayLabel:
+          type: string
+        availability:
+          type: string
+          enum: [available, missing, unavailable]
+        sheetProvenance:
+          type: array
+          description: Sheet IDs/names that include this column
+          items:
+            type: string
+        dataType:
+          type: string
+          nullable: true
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [columnName, displayLabel, availability, sheetProvenance]
+    SearchResponse:
+      type: object
+      properties:
+        legend:
+          $ref: "#/components/schemas/SimilarityLegend"
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResult"
+      required: [legend, results]
+    SimilarityLegend:
+      type: object
+      properties:
+        palette:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarityBand"
+        scale:
+          type: string
+          example: "0-100%"
+      required: [palette, scale]
+    SimilarityBand:
+      type: object
+      properties:
+        label:
+          type: string
+          example: Very High
+        min:
+          type: number
+          minimum: 0
+          maximum: 100
+        max:
+          type: number
+          minimum: 0
+          maximum: 100
+        color:
+          type: string
+          example: "#0F766E"
+      required: [label, min, max, color]
+    SearchResult:
+      type: object
+      properties:
+        resultId:
+          type: string
+        datasetId:
+          type: string
+        sheetId:
+          type: string
+        similarityScore:
+          type: number
+          description: 0-100 value
+          minimum: 0
+          maximum: 100
+        similarityLabel:
+          type: string
+          enum: [Very Low, Low, Medium, High, Very High]
+        colorStop:
+          type: string
+          example: "#22D3EE"
+        contextualColumns:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContextualColumn"
+        rank:
+          type: integer
+        queryId:
+          type: string
+      required: [datasetId, sheetId, similarityScore, similarityLabel, contextualColumns, rank]
+    ContextualColumn:
+      type: object
+      properties:
+        name:
+          type: string
+        displayLabel:
+          type: string
+        value:
+          type: string
+        availability:
+          type: string
+          enum: [available, missing, unavailable]
+      required: [name, displayLabel, value, availability]
+    PreferenceMirrorRequest:
+      type: object
+      properties:
+        datasetId:
+          type: string
+        deviceId:
+          type: string
+          description: Browser-local identifier
+        version:
+          type: integer
+          minimum: 0
+        selectedColumns:
+          type: array
+          items:
+            $ref: "#/components/schemas/SelectedColumn"
+        maxColumns:
+          type: integer
+          nullable: true
+          minimum: 0
+        source:
+          type: string
+          example: localStorage
+      required: [datasetId, selectedColumns, version]
+    PreferenceMirrorResponse:
+      type: object
+      properties:
+        datasetId:
+          type: string
+        deviceId:
+          type: string
+          nullable: true
+        version:
+          type: integer
+        selectedColumns:
+          type: array
+          items:
+            $ref: "#/components/schemas/SelectedColumn"
+        maxColumns:
+          type: integer
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+      required: [datasetId, version, selectedColumns, updatedAt]
+    SelectedColumn:
+      type: object
+      properties:
+        name:
+          type: string
+        displayLabel:
+          type: string
+        position:
+          type: integer
+          minimum: 0
+      required: [name, displayLabel, position]
+    AnalyticsEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          enum:
+            - search.latency
+            - tab.switch.latency
+            - preference.load
+            - preference.save
+            - column.selection.persist
+        durationMs:
+          type: number
+          minimum: 0
+        datasetId:
+          type: string
+          nullable: true
+        tab:
+          type: string
+          nullable: true
+        success:
+          type: boolean
+        detail:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+      required: [event, durationMs, success, timestamp]

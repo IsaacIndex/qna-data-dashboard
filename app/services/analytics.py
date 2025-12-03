@@ -4,9 +4,10 @@ import math
 import time
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Iterable, Sequence
 
 from app.db.metadata import MetadataRepository
@@ -17,9 +18,168 @@ from app.db.schema import (
     QueryRecord,
     SimilarityCluster,
 )
-from app.utils.logging import get_logger
+from app.utils.logging import (
+    ANALYTICS_LOG_PATH,
+    BufferedJsonlWriter,
+    get_logger,
+    log_event,
+)
 
 LOGGER = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class AnalyticsEvent:
+    event: str
+    duration_ms: float
+    dataset_id: str | None = None
+    tab: str | None = None
+    success: bool = True
+    detail: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "event": self.event,
+            "duration_ms": round(self.duration_ms, 3),
+            "dataset_id": self.dataset_id,
+            "tab": self.tab,
+            "success": self.success,
+            "detail": self.detail,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+
+class AnalyticsClient:
+    """Lightweight event emitter that writes analytics JSONL with buffering."""
+
+    def __init__(
+        self,
+        *,
+        writer: BufferedJsonlWriter | None = None,
+        log_path: str | None = None,
+        buffer_size: int = 32,
+    ) -> None:
+        destination = Path(log_path) if log_path else ANALYTICS_LOG_PATH
+        self.writer = writer or BufferedJsonlWriter(destination, buffer_size=buffer_size)
+        self.logger = LOGGER
+
+    def search_latency(
+        self,
+        duration_ms: float,
+        *,
+        dataset_id: str | None = None,
+        success: bool = True,
+        detail: str | None = None,
+    ) -> AnalyticsEvent:
+        return self._record(
+            "search.latency",
+            duration_ms,
+            dataset_id=dataset_id,
+            success=success,
+            detail=detail,
+        )
+
+    def tab_switch_latency(
+        self,
+        duration_ms: float,
+        *,
+        tab: str | None = None,
+        dataset_id: str | None = None,
+        success: bool = True,
+        detail: str | None = None,
+    ) -> AnalyticsEvent:
+        return self._record(
+            "tab.switch.latency",
+            duration_ms,
+            dataset_id=dataset_id,
+            tab=tab,
+            success=success,
+            detail=detail,
+        )
+
+    def preference_load(
+        self,
+        duration_ms: float,
+        *,
+        dataset_id: str | None = None,
+        success: bool = True,
+        detail: str | None = None,
+    ) -> AnalyticsEvent:
+        return self._record(
+            "preference.load",
+            duration_ms,
+            dataset_id=dataset_id,
+            success=success,
+            detail=detail,
+        )
+
+    def preference_save(
+        self,
+        duration_ms: float,
+        *,
+        dataset_id: str | None = None,
+        success: bool = True,
+        detail: str | None = None,
+    ) -> AnalyticsEvent:
+        return self._record(
+            "preference.save",
+            duration_ms,
+            dataset_id=dataset_id,
+            success=success,
+            detail=detail,
+        )
+
+    def column_selection_persist(
+        self,
+        duration_ms: float,
+        *,
+        dataset_id: str | None = None,
+        success: bool = True,
+        detail: str | None = None,
+    ) -> AnalyticsEvent:
+        return self._record(
+            "column.selection.persist",
+            duration_ms,
+            dataset_id=dataset_id,
+            success=success,
+            detail=detail,
+        )
+
+    def flush(self) -> None:
+        self.writer.flush()
+
+    def _record(
+        self,
+        event: str,
+        duration_ms: float,
+        *,
+        dataset_id: str | None,
+        tab: str | None = None,
+        success: bool,
+        detail: str | None,
+    ) -> AnalyticsEvent:
+        clamped = max(0.0, float(duration_ms))
+        payload = AnalyticsEvent(
+            event=event,
+            duration_ms=clamped,
+            dataset_id=dataset_id,
+            tab=tab,
+            success=success,
+            detail=detail,
+        )
+        self.writer.write(payload.to_dict())
+        log_event(
+            self.logger,
+            event,
+            duration_ms=payload.duration_ms,
+            dataset_id=dataset_id,
+            tab=tab,
+            success=success,
+            detail=detail,
+            timestamp=payload.timestamp.isoformat(),
+        )
+        return payload
 
 
 @dataclass

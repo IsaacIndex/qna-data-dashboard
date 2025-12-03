@@ -96,6 +96,129 @@ class BundleRefreshResult:
     audit: BundleAudit
 
 
+@dataclass(frozen=True)
+class ColumnCatalogEntry:
+    column_name: str
+    display_label: str
+    availability: Literal["available", "missing", "unavailable"]
+    sheet_ids: tuple[str, ...]
+    sheet_labels: tuple[str, ...]
+    data_type: str | None
+    last_seen_at: datetime | None
+    normalized_key: str
+
+
+def _normalize_column_key(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def _merge_availability(
+    current: Literal["available", "missing", "unavailable"],
+    candidate: Literal["available", "missing", "unavailable"],
+) -> Literal["available", "missing", "unavailable"]:
+    priority = {"available": 2, "missing": 1, "unavailable": 0}
+    return current if priority[current] >= priority[candidate] else candidate
+
+
+def aggregate_column_catalog(
+    sheets: Sequence[SheetSource],
+    *,
+    include_unavailable: bool = False,
+) -> list[ColumnCatalogEntry]:
+    """Build a deduplicated column catalog with availability and sheet provenance."""
+    catalog: dict[str, dict[str, object]] = {}
+
+    for sheet in sheets:
+        if sheet.status != SheetStatus.ACTIVE:
+            continue
+        schema = getattr(sheet, "column_schema", None) or []
+        latest_seen = sheet.last_refreshed_at
+        seen_keys: set[str] = set()
+
+        for column in schema:
+            raw_name = str(column.get("name", "")).strip()
+            if not raw_name:
+                continue
+            normalized = _normalize_column_key(raw_name)
+            if not normalized or normalized in seen_keys:
+                continue
+            seen_keys.add(normalized)
+
+            availability = str(column.get("availability", "available")).lower()
+            if availability not in {"available", "missing", "unavailable"}:
+                availability = "available"
+            data_type = column.get("inferredType") or column.get("data_type")
+            display_label = str(column.get("display_label", raw_name)).strip() or raw_name
+
+            entry = catalog.get(normalized)
+            if entry is None:
+                entry = {
+                    "column_name": raw_name,
+                    "display_label": display_label,
+                    "availability": availability,
+                    "data_type": str(data_type) if data_type else None,
+                    "sheet_ids": set(),
+                    "sheet_labels": [],
+                    "last_seen_at": latest_seen,
+                }
+                catalog[normalized] = entry
+            else:
+                entry["availability"] = _merge_availability(
+                    entry["availability"], availability  # type: ignore[arg-type]
+                )
+                if entry["data_type"] is None and data_type:
+                    entry["data_type"] = str(data_type)
+                if entry["last_seen_at"] is None or (
+                    latest_seen and latest_seen > entry["last_seen_at"]
+                ):
+                    entry["last_seen_at"] = latest_seen
+
+            if sheet.id not in entry["sheet_ids"]:
+                entry["sheet_ids"].add(sheet.id)  # type: ignore[attr-defined]
+            if sheet.display_label not in entry["sheet_labels"]:
+                entry["sheet_labels"].append(sheet.display_label)  # type: ignore[attr-defined]
+
+    entries: list[ColumnCatalogEntry] = []
+    for normalized, entry in catalog.items():
+        availability = entry["availability"]  # type: ignore[assignment]
+        if not include_unavailable and availability != "available":
+            continue
+        entries.append(
+            ColumnCatalogEntry(
+                column_name=entry["column_name"],  # type: ignore[arg-type]
+                display_label=entry["display_label"],  # type: ignore[arg-type]
+                availability=availability,  # type: ignore[arg-type]
+                sheet_ids=tuple(sorted(entry["sheet_ids"])),  # type: ignore[arg-type]
+                sheet_labels=tuple(entry["sheet_labels"]),  # type: ignore[arg-type]
+                data_type=entry["data_type"],  # type: ignore[arg-type]
+                last_seen_at=entry["last_seen_at"],  # type: ignore[arg-type]
+                normalized_key=normalized,
+            )
+        )
+    entries.sort(key=lambda item: item.display_label.lower())
+    return entries
+
+
+def build_column_picker_options(
+    catalog: Sequence[ColumnCatalogEntry],
+) -> list[dict[str, object]]:
+    """Prepare a UI-friendly representation of catalog entries with sheet chips."""
+    options: list[dict[str, object]] = []
+    for entry in catalog:
+        sheet_chips = sorted(set(entry.sheet_labels)) if entry.sheet_labels else sorted(entry.sheet_ids)
+        options.append(
+            {
+                "column_name": entry.column_name,
+                "display_label": entry.display_label,
+                "availability": entry.availability,
+                "sheet_chips": sheet_chips,
+                "data_type": entry.data_type,
+                "last_seen_at": entry.last_seen_at,
+            }
+        )
+    return options
+
+
 @dataclass
 class IngestionOptions:
     selected_columns: Sequence[str]

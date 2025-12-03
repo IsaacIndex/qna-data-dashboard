@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Optional
@@ -19,15 +20,16 @@ from app.db.metadata import (
     session_scope,
 )
 from app.db.schema import QuerySheetRole, SheetStatus
-from app.services.analytics import AnalyticsService
+from app.services.analytics import AnalyticsClient, AnalyticsService
 from app.services.embeddings import EmbeddingService
 from app.services.ingestion import (
     BundleIngestionOptions,
     HiddenSheetPolicy,
     IngestionOptions,
     IngestionService,
+    aggregate_column_catalog,
 )
-from app.services.search import SearchService
+from app.services.search import SearchService, build_contextual_defaults, build_similarity_legend
 from app.services.query_builder import (
     QueryBuilderService,
     QueryConflictError,
@@ -73,6 +75,42 @@ class ColumnPreferenceResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class MirrorSelectedColumnPayload(BaseModel):
+    name: Annotated[str, Field(alias="name")]
+    display_label: Annotated[str, Field(alias="displayLabel")]
+    position: Annotated[int, Field(alias="position", ge=0)]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PreferenceMirrorRequest(BaseModel):
+    dataset_id: Annotated[str, Field(alias="datasetId")]
+    device_id: Annotated[str | None, Field(alias="deviceId", default=None)]
+    version: Annotated[int, Field(default=0, ge=0)]
+    selected_columns: Annotated[
+        list[MirrorSelectedColumnPayload],
+        Field(alias="selectedColumns", default_factory=list),
+    ]
+    max_columns: Annotated[int | None, Field(alias="maxColumns", default=None)]
+    source: Annotated[str | None, Field(alias="source", default=None)]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PreferenceMirrorResponse(BaseModel):
+    dataset_id: Annotated[str, Field(alias="datasetId")]
+    device_id: Annotated[str | None, Field(alias="deviceId", default=None)]
+    version: Annotated[int, Field(alias="version")]
+    selected_columns: Annotated[
+        list[MirrorSelectedColumnPayload],
+        Field(alias="selectedColumns", default_factory=list),
+    ]
+    max_columns: Annotated[int, Field(alias="maxColumns")]
+    updated_at: Annotated[datetime, Field(alias="updatedAt")]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class DisplayableColumnResponse(BaseModel):
     column_name: Annotated[str, Field(alias="columnName")]
     display_label: Annotated[str, Field(alias="displayLabel")]
@@ -86,6 +124,24 @@ class DisplayableColumnResponse(BaseModel):
 class ColumnCatalogResponse(BaseModel):
     dataset_id: Annotated[str, Field(alias="datasetId")]
     columns: list[DisplayableColumnResponse]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ColumnCatalogItemResponse(BaseModel):
+    column_name: Annotated[str, Field(alias="columnName")]
+    display_label: Annotated[str, Field(alias="displayLabel")]
+    availability: Annotated[str, Field(alias="availability")]
+    sheet_provenance: Annotated[list[str], Field(alias="sheetProvenance", default_factory=list)]
+    data_type: Annotated[str | None, Field(alias="dataType", default=None)]
+    last_seen_at: Annotated[datetime | None, Field(alias="lastSeenAt", default=None)]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AggregatedColumnCatalogResponse(BaseModel):
+    dataset_id: Annotated[str, Field(alias="datasetId")]
+    columns: list[ColumnCatalogItemResponse]
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -246,6 +302,44 @@ def create_app(
             ],
             max_columns=max_columns,
             updated_at=datetime.now(timezone.utc),
+            version=0,
+            source="preference",
+        )
+
+    def _snapshot_from_mirror(payload: PreferenceMirrorRequest) -> PreferenceSnapshot:
+        max_columns = payload.max_columns if payload.max_columns is not None else max(len(payload.selected_columns), 1)
+        return PreferenceSnapshot(
+            dataset_id=payload.dataset_id,
+            user_id=payload.device_id,
+            selected_columns=[
+                SelectedColumn(
+                    column_name=column.name,
+                    display_label=column.display_label,
+                    position=column.position,
+                )
+                for column in payload.selected_columns
+            ],
+            max_columns=max_columns or 1,
+            updated_at=datetime.now(timezone.utc),
+            version=payload.version,
+            source=payload.source or "mirror",
+        )
+
+    def _mirror_response(snapshot: PreferenceSnapshot) -> PreferenceMirrorResponse:
+        return PreferenceMirrorResponse(
+            dataset_id=snapshot.dataset_id,
+            device_id=snapshot.user_id,
+            version=snapshot.version,
+            selected_columns=[
+                MirrorSelectedColumnPayload(
+                    name=column.column_name,
+                    display_label=column.display_label,
+                    position=column.position,
+                )
+                for column in snapshot.selected_columns
+            ],
+            max_columns=snapshot.max_columns,
+            updated_at=snapshot.updated_at,
         )
 
     @app.get(
@@ -277,7 +371,7 @@ def create_app(
     )
     def load_column_preference(
         dataset_id: Annotated[str, Query(alias="datasetId")],
-        user_id: Annotated[str | None, Query(alias="userId")]=None,
+        user_id: Annotated[str | None, Query(alias="userId")] = None,
         service: ColumnPreferenceService = Depends(get_preference_service),
     ) -> ColumnPreferenceResponse:
         snapshot = service.load_preference(dataset_id=dataset_id, user_id=user_id)
@@ -304,11 +398,40 @@ def create_app(
     @app.delete("/preferences/columns", status_code=status.HTTP_204_NO_CONTENT)
     def delete_column_preference(
         dataset_id: Annotated[str, Query(alias="datasetId")],
-        user_id: Annotated[str | None, Query(alias="userId")]=None,
+        user_id: Annotated[str | None, Query(alias="userId")] = None,
         service: ColumnPreferenceService = Depends(get_preference_service),
     ) -> Response:
         service.reset_preference(dataset_id, user_id=user_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post(
+        "/preferences/columns/mirror",
+        status_code=status.HTTP_202_ACCEPTED,
+        response_model=PreferenceMirrorResponse,
+        response_model_by_alias=True,
+    )
+    def mirror_preferences(
+        payload: PreferenceMirrorRequest,
+        service: ColumnPreferenceService = Depends(get_preference_service),
+    ) -> PreferenceMirrorResponse:
+        snapshot = _snapshot_from_mirror(payload)
+        mirrored = service.mirror_preference(snapshot)
+        return _mirror_response(mirrored)
+
+    @app.get(
+        "/preferences/columns/mirror",
+        response_model=PreferenceMirrorResponse,
+        response_model_by_alias=True,
+    )
+    def load_mirrored_preference(
+        dataset_id: Annotated[str, Query(alias="datasetId")],
+        device_id: Annotated[str | None, Query(alias="deviceId")] = None,
+        service: ColumnPreferenceService = Depends(get_preference_service),
+    ) -> PreferenceMirrorResponse | Response:
+        snapshot = service.load_mirrored_preference(dataset_id=dataset_id, device_id=device_id)
+        if snapshot is None:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return _mirror_response(snapshot)
 
     def _parse_preview_request(payload: dict[str, object]) -> QueryPreviewRequest:
         sheets_payload = payload.get("sheets")
@@ -644,36 +767,115 @@ def create_app(
             "completed_at": audit.completed_at.isoformat() if audit.completed_at else None,
         }
 
+    @app.get(
+        "/datasets/{dataset_id}/columns/catalog",
+        response_model=AggregatedColumnCatalogResponse,
+        response_model_by_alias=True,
+    )
+    def list_dataset_column_catalog(
+        dataset_id: str,
+        include_unavailable: bool = Query(
+            default=False,
+            alias="includeUnavailable",
+            description="Include columns marked missing/unavailable",
+        ),
+        repo: MetadataRepository = Depends(get_repository),
+    ) -> AggregatedColumnCatalogResponse:
+        bundle = repo.get_source_bundle(dataset_id)
+        if bundle is None:
+            raise HTTPException(status_code=404, detail="Dataset not found.")
+
+        sheets = repo.list_sheet_sources(bundle_id=bundle.id, statuses=[SheetStatus.ACTIVE])
+        catalog = aggregate_column_catalog(sheets, include_unavailable=include_unavailable)
+        columns = [
+            ColumnCatalogItemResponse(
+                column_name=entry.column_name,
+                display_label=entry.display_label,
+                availability=entry.availability,
+                sheet_provenance=list(entry.sheet_labels) if entry.sheet_labels else list(entry.sheet_ids),
+                data_type=entry.data_type,
+                last_seen_at=entry.last_seen_at,
+            )
+            for entry in catalog
+        ]
+        return AggregatedColumnCatalogResponse(dataset_id=bundle.id, columns=columns)
+
     @app.get("/search")
     def search_queries(
         q: str = Query(..., description="Natural language search query"),
         dataset_ids: str | None = Query(
             default=None,
+            alias="datasetIds",
             description="Comma-separated dataset IDs to filter results",
+        ),
+        dataset_ids_legacy: str | None = Query(
+            default=None,
+            alias="dataset_ids",
+            description="Comma-separated dataset IDs to filter results (legacy dataset_ids)",
         ),
         column_names: str | None = Query(
             default=None,
+            alias="columnNames",
             description="Comma-separated column names to filter results",
         ),
-        min_similarity: float = Query(
-            default=0.6,
+        column_names_legacy: str | None = Query(
+            default=None,
+            alias="column_names",
+            description="Comma-separated column names to filter results (legacy column_names)",
+        ),
+        min_similarity_percent: float = Query(
+            default=60.0,
+            ge=0.0,
+            le=100.0,
+            description="Minimum similarity threshold (0-100)",
+            alias="minSimilarityPercent",
+        ),
+        min_similarity: float | None = Query(
+            default=None,
             ge=0.0,
             le=1.0,
-            description="Minimum similarity threshold (0-1)",
+            description="Minimum similarity threshold (0-1, legacy)",
+            alias="min_similarity",
         ),
         limit: int = Query(default=20, ge=1, le=100, description="Maximum results to return"),
         search_service: SearchService = Depends(get_search_service),
     ):
-        dataset_filters = _split_csv(dataset_ids) or None
-        column_filters = _split_csv(column_names) or None
+        dataset_filters = _split_csv(dataset_ids or dataset_ids_legacy) or None
+        column_filters = _split_csv(column_names or column_names_legacy) or None
+        similarity_threshold = min_similarity if min_similarity is not None else (min_similarity_percent / 100.0)
+        start = time.perf_counter()
         results = search_service.search(
             query=q,
             dataset_ids=dataset_filters,
             column_names=column_filters,
-            min_similarity=min_similarity,
+            min_similarity=similarity_threshold,
             limit=limit,
         )
-        return {"results": [result.to_dict() for result in results]}
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        legend = build_similarity_legend()
+        dataset_scope = dataset_filters or sorted({result.dataset_id for result in results})
+        contextual_defaults = build_contextual_defaults(search_service.metadata_repository, dataset_scope)
+        try:
+            client = AnalyticsClient()
+            contextual_labels = sorted(
+                {
+                    label
+                    for result in results
+                    for label in result.metadata.get("contextual_labels", {}).values()
+                }
+            )
+            detail = f"contextual:{','.join(contextual_labels)}" if contextual_labels else None
+            dataset_hint = dataset_filters[0] if dataset_filters else None
+            client.search_latency(elapsed_ms, dataset_id=dataset_hint, detail=detail)
+            client.flush()
+        except Exception:
+            pass
+
+        return {
+            "legend": legend,
+            "contextual_defaults": contextual_defaults,
+            "results": [result.to_dict() for result in results],
+        }
 
     @app.get("/analytics/clusters")
     def analytics_clusters(
