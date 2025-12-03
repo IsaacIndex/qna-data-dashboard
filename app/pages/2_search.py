@@ -516,12 +516,12 @@ def main() -> None:
             form_submitted = st.form_submit_button("Run Search", type="primary", use_container_width=True)
     min_similarity = st.slider("Minimum similarity", min_value=0.0, max_value=1.0, value=0.6, step=0.05)
     limit = st.slider("Maximum results", min_value=1, max_value=100, value=20, step=1)
-    st.markdown("**Similarity Legend**")
-    st.dataframe(
-        _style_similarity_legend(build_similarity_legend_table()),
-        hide_index=True,
-        use_container_width=True,
-    )
+    with st.expander("Similarity Legend", expanded=False):
+        st.dataframe(
+            _style_similarity_legend(build_similarity_legend_table()),
+            hide_index=True,
+            use_container_width=True,
+        )
 
     with session_scope(_get_session_factory()) as session:
         repo = MetadataRepository(session)
