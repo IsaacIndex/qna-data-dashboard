@@ -531,9 +531,14 @@ def main() -> None:
     st.divider()
 
     dataset_labels = {item["label"]: item for item in dataset_options}
+    dataset_key = "search_dataset_selection"
+    if dataset_key in state:
+        state[dataset_key] = [label for label in state[dataset_key] if label in dataset_labels]
     selection = st.multiselect(
         "Datasets",
         options=list(dataset_labels.keys()),
+        default=state.get(dataset_key, []),
+        key=dataset_key,
     )
     selected_dataset_ids = [dataset_labels[item]["id"] for item in selection]
 
@@ -542,9 +547,14 @@ def main() -> None:
         if not selection or item["id"] in selected_dataset_ids:
             available_columns.update(item["columns"])
     sorted_columns = sorted(available_columns)
+    column_key = "search_column_selection"
+    if column_key in state:
+        state[column_key] = [column for column in state[column_key] if column in sorted_columns]
     selected_columns = st.multiselect(
         "Columns",
         options=sorted_columns,
+        default=state.get(column_key, []),
+        key=column_key,
     )
 
     run_disabled = not query.strip()

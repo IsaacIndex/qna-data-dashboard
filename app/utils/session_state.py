@@ -10,6 +10,8 @@ SESSION_DEFAULTS: dict[str, Any] = {
     "active_tab": None,
     "selected_sheets": [],
     "selected_columns": [],
+    "search_dataset_selection": [],
+    "search_column_selection": [],
     "filters": {},
     "preference_status": "idle",
     "last_saved_at": None,
