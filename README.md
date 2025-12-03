@@ -45,6 +45,13 @@ On first launch the app ensures `./data/` exists with subdirectories for raw upl
 3. **Query Builder** – assemble sheet combinations, configure joins, and validate projections before exporting.
 4. **Coverage Analytics** – refresh redundancy/diversity metrics, review cluster stability, and export insights for stakeholder reviews.
 
+## How Search Works
+- Corpus is built during ingestion: selected columns are normalized (trimmed, whitespace-collapsed, numbers dropped) into `QueryRecord` rows that retain dataset, sheet, column, and row offsets.
+- Each search loads up to 5k recent candidates (optionally filtered by dataset or column), scores them with a lightweight `difflib.SequenceMatcher` similarity against the query, and keeps matches above the default 0.6 threshold.
+- Results are sorted by similarity, capped to the requested limit (default 20), and annotated with a 0–100% score plus palette buckets used by the UI legend.
+- Dataset-specific contextual columns come from saved analyst preferences; missing fields are tolerated and logged so searches still return even when a sheet schema drifts.
+- Search latency and per-sheet metrics are recorded to SQLite for the analytics view; the flow remains local-first and works even without external embedding downloads.
+
 ## Configuration
 Key environment variables (all optional):
 
@@ -103,4 +110,3 @@ poetry run mypy
 2. Add or update tests alongside code changes.
 3. Run the quality gates (`ruff`, `black`, `mypy`, `pytest`) before opening a PR.
 4. Document user-facing changes in the README or relevant Streamlit page to keep analysts unblocked.
-
