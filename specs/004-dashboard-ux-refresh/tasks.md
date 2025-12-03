@@ -18,9 +18,9 @@ description: "Executable task list for Q&A Dashboard UX Refresh"
 
 **Purpose**: Baseline artifacts and fixtures required for downstream work
 
-- [ ] T001 Add analytics log placeholder to keep path available in git at `/Users/isaacibm/GitHub/qna-data-dashboard/data/logs/.gitkeep`
-- [ ] T002 Add multi-sheet test fixture covering missing/duplicate headers for ingestion and picker flows at `/Users/isaacibm/GitHub/qna-data-dashboard/tests/fixtures/multi_sheet_column_cases.xlsx`
-- [ ] T003 Document feature-specific run instructions and telemetry log location updates in `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/quickstart.md`
+- [X] T001 Add analytics log placeholder to keep path available in git at `/Users/isaacibm/GitHub/qna-data-dashboard/data/logs/.gitkeep`
+- [X] T002 Add multi-sheet test fixture covering missing/duplicate headers for ingestion and picker flows at `/Users/isaacibm/GitHub/qna-data-dashboard/tests/fixtures/multi_sheet_column_cases.xlsx`
+- [X] T003 Document feature-specific run instructions and telemetry log location updates in `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/quickstart.md`
 
 ---
 
@@ -28,10 +28,10 @@ description: "Executable task list for Q&A Dashboard UX Refresh"
 
 **Purpose**: Shared utilities and telemetry required before any user story can proceed
 
-- [ ] T004 [P] Add similarity palette and banding constants (0–100, five stops) for reuse across UI/backend in `/Users/isaacibm/GitHub/qna-data-dashboard/app/utils/constants.py`
-- [ ] T005 Extend analytics client to emit `search.latency`, `tab.switch.latency`, `preference.load/save`, and `column.selection.persist` events with buffered JSONL writer in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/analytics.py` and `/Users/isaacibm/GitHub/qna-data-dashboard/app/utils/logging.py`
-- [ ] T006 [P] Add shared column catalog aggregation helper (union + availability flags) based on `ColumnCatalog` entity in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/ingestion.py`
-- [ ] T007 Add session state helper to persist tab/page selections and reset confirmations in `/Users/isaacibm/GitHub/qna-data-dashboard/app/utils/session_state.py`
+- [X] T004 [P] Add similarity palette and banding constants (0–100, five stops) for reuse across UI/backend in `/Users/isaacibm/GitHub/qna-data-dashboard/app/utils/constants.py`
+- [X] T005 Extend analytics client to emit `search.latency`, `tab.switch.latency`, `preference.load/save`, and `column.selection.persist` events with buffered JSONL writer in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/analytics.py` and `/Users/isaacibm/GitHub/qna-data-dashboard/app/utils/logging.py`
+- [X] T006 [P] Add shared column catalog aggregation helper (union + availability flags) based on `ColumnCatalog` entity in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/ingestion.py`
+- [X] T007 Add session state helper to persist tab/page selections and reset confirmations in `/Users/isaacibm/GitHub/qna-data-dashboard/app/utils/session_state.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -44,15 +44,15 @@ description: "Executable task list for Q&A Dashboard UX Refresh"
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Add contract test for `/search` legend + contextual columns response in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/contract/test_search_endpoint.py`
-- [ ] T009 [P] [US1] Add Streamlit integration test for similarity legend/guidance when no contextual columns configured in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/integration/search/test_search_similarity_ui.py`
+- [X] T008 [P] [US1] Add contract test for `/search` legend + contextual columns response in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/contract/test_search_endpoint.py`
+- [X] T009 [P] [US1] Add Streamlit integration test for similarity legend/guidance when no contextual columns configured in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/integration/search/test_search_similarity_ui.py`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [P] [US1] Update FastAPI `/search` route to return similarity legend palette and contextual column defaults in `/Users/isaacibm/GitHub/qna-data-dashboard/app/api/router.py`
-- [ ] T011 [P] [US1] Add similarity banding utility (0–20…86–100 with labels/colors) and unit coverage in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/search.py`
-- [ ] T012 [US1] Render contextual columns, legend, and inline guidance for empty preferences on the search page in `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/2_search.py`
-- [ ] T013 [US1] Emit `search.latency` analytics and include contextual column provenance per result in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/analytics.py`
+- [X] T010 [P] [US1] Update FastAPI `/search` route to return similarity legend palette and contextual column defaults in `/Users/isaacibm/GitHub/qna-data-dashboard/app/api/router.py`
+- [X] T011 [P] [US1] Add similarity banding utility (0–20…86–100 with labels/colors) and unit coverage in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/search.py`
+- [X] T012 [US1] Render contextual columns, legend, and inline guidance for empty preferences on the search page in `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/2_search.py`
+- [X] T013 [US1] Emit `search.latency` analytics and include contextual column provenance per result in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/analytics.py`
 
 **Checkpoint**: User Story 1 independently testable (search queries show contextual columns + similarity scale)
 
@@ -65,15 +65,15 @@ description: "Executable task list for Q&A Dashboard UX Refresh"
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Add contract test for `/datasets/{datasetId}/columns/catalog` dedup + availability responses in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/contract/test_column_catalog.py`
-- [ ] T015 [P] [US2] Add integration test for column picker dedupe, sheet chips, and persistence across tab switches in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/integration/ingest/test_column_picker_dedupe.py`
+- [X] T014 [P] [US2] Add contract test for `/datasets/{datasetId}/columns/catalog` dedup + availability responses in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/contract/test_column_catalog.py`
+- [X] T015 [P] [US2] Add integration test for column picker dedupe, sheet chips, and persistence across tab switches in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/integration/ingest/test_column_picker_dedupe.py`
 
 ### Implementation for User Story 2
 
-- [ ] T016 [P] [US2] Implement column catalog union with sheet provenance and unavailable badges in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/ingestion.py`
-- [ ] T017 [P] [US2] Wire FastAPI endpoint `/datasets/{datasetId}/columns/catalog` to new aggregator with `includeUnavailable` support in `/Users/isaacibm/GitHub/qna-data-dashboard/app/api/router.py`
-- [ ] T018 [US2] Update ingest page column picker to show unique columns once with sheet chips and keyboard-friendly selection in `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/1_ingest.py`
-- [ ] T019 [US2] Persist column selections in session state across tabs and emit `column.selection.persist` analytics in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/preferences.py`
+- [X] T016 [P] [US2] Implement column catalog union with sheet provenance and unavailable badges in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/ingestion.py`
+- [X] T017 [P] [US2] Wire FastAPI endpoint `/datasets/{datasetId}/columns/catalog` to new aggregator with `includeUnavailable` support in `/Users/isaacibm/GitHub/qna-data-dashboard/app/api/router.py`
+- [X] T018 [US2] Update ingest page column picker to show unique columns once with sheet chips and keyboard-friendly selection in `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/1_ingest.py`
+- [X] T019 [US2] Persist column selections in session state across tabs and emit `column.selection.persist` analytics in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/preferences.py`
 
 **Checkpoint**: User Story 2 independently testable (deduped picker + persisted selections)
 
@@ -86,14 +86,14 @@ description: "Executable task list for Q&A Dashboard UX Refresh"
 
 ### Tests for User Story 3
 
-- [ ] T020 [P] [US3] Add contract test for preference mirror GET/POST non-blocking responses in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/contract/test_preferences_mirror.py`
-- [ ] T021 [P] [US3] Add integration test for device-local preference hydration and reset across app restart in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/integration/preferences/test_local_preferences.py`
+- [X] T020 [P] [US3] Add contract test for preference mirror GET/POST non-blocking responses in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/contract/test_preferences_mirror.py`
+- [X] T021 [P] [US3] Add integration test for device-local preference hydration and reset across app restart in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/integration/preferences/test_local_preferences.py`
 
 ### Implementation for User Story 3
 
-- [ ] T022 [P] [US3] Enhance preference adapter to hydrate `st.session_state` asynchronously from localStorage with safe defaults in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/preferences.py`
-- [ ] T023 [P] [US3] Implement optional backend mirror calls with error-tolerant handling for preferences in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/preferences.py` and `/Users/isaacibm/GitHub/qna-data-dashboard/app/api/router.py`
-- [ ] T024 [US3] Apply saved layouts/columns across search and ingest pages with reset confirmation copy in `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/2_search.py` and `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/1_ingest.py`
+- [X] T022 [P] [US3] Enhance preference adapter to hydrate `st.session_state` asynchronously from localStorage with safe defaults in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/preferences.py`
+- [X] T023 [P] [US3] Implement optional backend mirror calls with error-tolerant handling for preferences in `/Users/isaacibm/GitHub/qna-data-dashboard/app/services/preferences.py` and `/Users/isaacibm/GitHub/qna-data-dashboard/app/api/router.py`
+- [X] T024 [US3] Apply saved layouts/columns across search and ingest pages with reset confirmation copy in `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/2_search.py` and `/Users/isaacibm/GitHub/qna-data-dashboard/app/pages/1_ingest.py`
 
 **Checkpoint**: User Story 3 independently testable (device-local preferences load, mirror, reset)
 
@@ -103,9 +103,9 @@ description: "Executable task list for Q&A Dashboard UX Refresh"
 
 **Purpose**: Performance, documentation, and final validation
 
-- [ ] T025 [P] Add performance smoke tests for search execution and tab switch latency budgets in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/performance/test_latency_budgets.py`
-- [ ] T026 [P] Update documentation for similarity palette, guidance copy, and reset behaviors in `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/quickstart.md` and `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/research.md`
-- [ ] T027 Run end-to-end quickstart validation (ingest, column picker, search, preferences, analytics log) and record outcomes in `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/checklists/validation.md`
+- [X] T025 [P] Add performance smoke tests for search execution and tab switch latency budgets in `/Users/isaacibm/GitHub/qna-data-dashboard/tests/performance/test_latency_budgets.py`
+- [X] T026 [P] Update documentation for similarity palette, guidance copy, and reset behaviors in `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/quickstart.md` and `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/research.md`
+- [X] T027 Run end-to-end quickstart validation (ingest, column picker, search, preferences, analytics log) and record outcomes in `/Users/isaacibm/GitHub/qna-data-dashboard/specs/004-dashboard-ux-refresh/checklists/validation.md`
 
 ---
 
@@ -128,4 +128,3 @@ Dependency graph: Setup → Foundational → US1 → US2 → US3 → Polish (US2
 - MVP first: complete Setup → Foundational → User Story 1, then validate via T008–T013.  
 - Incremental delivery: add User Story 2, validate picker flows; then User Story 3 for saved preferences.  
 - Keep tasks independently testable; prefer small merges per task to maintain clarity and rollback safety.
-

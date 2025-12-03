@@ -18,4 +18,10 @@
 
 5. **Save/reset preferences (device-local)**: adjust contextual columns, save, refresh the browser, and confirm localStorage rehydrates the view without blocking; use reset to restore defaults and confirm a reset confirmation message appears.
 
-6. **Check analytics events**: inspect `data/logs/analytics.jsonl` for `search.latency`, `tab.switch.latency`, `preference.load/save`, and `column.selection.persist` records after interactions; ensure durations stay under the 2s P95 budget for search/tab switches.
+6. **Check analytics events**: inspect `data/logs/analytics.jsonl` (kept under version control with `/data/logs/.gitkeep`) for `search.latency`, `tab.switch.latency`, `preference.load/save`, and `column.selection.persist` records after interactions; ensure durations stay under the 2s P95 budget for search/tab switches.
+
+- Optional audit mirror: use `POST /preferences/columns/mirror` to send the current device-local snapshot (returns `202 Accepted`) and `GET /preferences/columns/mirror?datasetId=...&deviceId=...` for the latest mirrored copy (`200` or `204` when none). Hydration stays non-blocking even when the mirror is unavailable.
+
+### Test fixtures
+
+- Use the bundled multi-sheet sample at `tests/fixtures/multi_sheet_column_cases.xlsx` to validate deduped column picker behavior, missing headers handling, and selection persistence across tabs.

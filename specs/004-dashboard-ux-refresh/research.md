@@ -21,3 +21,7 @@
 - Decision: Performance guardrails: cache dataset metadata/column catalogs with `st.cache_data`, debounce search inputs, and precompute similarity color bands server-side to avoid per-row recalculation; ensure tab switches reuse cached selections from `st.session_state` and avoid heavy recomputation in `on_tab_change` handlers.  
   Rationale: Keeps interactions under 2s P95, reduces rerender overhead, and aligns with the local-first setup; caching plus debounce prevent redundant backend calls when analysts type or switch tabs quickly.  
   Alternatives considered: Uncached per-render recomputation (risks >2s latency), client-only color computation (duplicated logic and harder testability), or aggressive background polling (wasted cycles with minimal UX gain).
+
+- Decision: Hydrate preferences from device-local storage with a tolerant parser that defaults to safe selections, emit `preference.load` analytics, and optionally mirror snapshots to a lightweight `/preferences/columns/mirror` endpoint/table (POST `202`, GET `200/204`) without blocking UI flows. Reset flows show confirmation before clearing session/local payloads and mirrored copies.  
+  Rationale: Keeps the search tab responsive while still allowing audit-friendly persistence; mirrors are best-effort so offline runs continue to work, and confirmation prevents accidental loss of contextual column layouts.  
+  Alternatives considered: Hard failure when mirror is unavailable (would block search), or backend-only storage (breaks device-local requirement).

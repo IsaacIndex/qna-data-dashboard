@@ -391,3 +391,20 @@ class ColumnPreferenceChange(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     preference: Mapped[ColumnPreference] = relationship(back_populates="changes")
+
+
+class PreferenceMirror(Base):
+    __tablename__ = "preference_mirrors"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    data_file_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    device_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    selected_columns: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    max_columns: Mapped[int] = mapped_column(Integer, default=10)
+    source: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("data_file_id", "device_id", name="uq_preference_mirror_dataset_device"),
+    )

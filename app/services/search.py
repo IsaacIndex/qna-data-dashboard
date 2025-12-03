@@ -8,9 +8,74 @@ from typing import Iterable, Sequence
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import MetricType, QueryRecord, SheetMetricType, SheetSource
+from app.utils.constants import SIMILARITY_BANDS, SIMILARITY_SCALE_LABEL
 from app.utils.logging import get_logger, log_missing_columns
 
 LOGGER = get_logger(__name__)
+
+
+def similarity_to_percent(value: float) -> float:
+    """Convert a 0-1 similarity ratio to a clamped 0-100 percentage."""
+    if math.isnan(value):  # pragma: no cover - defensive path
+        return 0.0
+    clamped = max(0.0, min(value, 1.0))
+    return round(clamped * 100.0, 2)
+
+
+def describe_similarity_score(score_percent: float) -> tuple[str, str]:
+    """Return the band label and color stop for a 0-100 similarity score."""
+    clamped = max(0.0, min(score_percent, 100.0))
+    for band in SIMILARITY_BANDS:
+        if band.min_score <= clamped <= band.max_score:
+            return band.label, band.color
+    fallback = SIMILARITY_BANDS[-1]
+    return fallback.label, fallback.color
+
+
+def build_similarity_legend() -> dict[str, object]:
+    return {
+        "palette": [
+            {"label": band.label, "min": band.min_score, "max": band.max_score, "color": band.color}
+            for band in SIMILARITY_BANDS
+        ],
+        "scale": SIMILARITY_SCALE_LABEL,
+    }
+
+
+def build_contextual_defaults(
+    metadata_repository: MetadataRepository,
+    dataset_ids: Sequence[str],
+) -> list[dict[str, object]]:
+    defaults: list[dict[str, object]] = []
+    for dataset_id in dataset_ids:
+        dataset = metadata_repository.get_data_file(dataset_id)
+        if dataset is None:
+            continue
+        preference = metadata_repository.get_column_preference(data_file_id=dataset_id, user_id=None)
+        columns: list[dict[str, str]] = []
+        source = "dataset"
+        if preference and preference.selected_columns:
+            for entry in sorted(preference.selected_columns, key=lambda item: item.get("position", 0)):
+                name = str(entry.get("column_name") or "").strip()
+                if not name:
+                    continue
+                label = str(entry.get("display_label") or name).strip() or name
+                columns.append({"name": name, "display_label": label})
+            source = "preference"
+        else:
+            for name in dataset.selected_columns or []:
+                if not name:
+                    continue
+                columns.append({"name": name, "display_label": name})
+        defaults.append(
+            {
+                "dataset_id": dataset_id,
+                "dataset_name": dataset.display_name,
+                "columns": columns,
+                "source": source,
+            }
+        )
+    return defaults
 
 
 @dataclass
@@ -27,6 +92,16 @@ class SearchResult:
     metadata: dict[str, object]
     contextual_columns: dict[str, object] = field(default_factory=dict)
     missing_columns: list[str] = field(default_factory=list)
+    similarity_score: float = field(init=False)
+    similarity_label: str = field(init=False)
+    color_stop: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        percent = similarity_to_percent(self.similarity)
+        self.similarity_score = percent
+        label, color = describe_similarity_score(percent)
+        self.similarity_label = label
+        self.color_stop = color
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -39,6 +114,9 @@ class SearchResult:
             "row_index": self.row_index,
             "text": self.text,
             "similarity": self.similarity,
+            "similarity_score": self.similarity_score,
+            "similarity_label": self.similarity_label,
+            "color_stop": self.color_stop,
             "metadata": self.metadata,
             "contextual_columns": self.contextual_columns,
             "missing_columns": self.missing_columns,

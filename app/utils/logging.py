@@ -11,6 +11,7 @@ from typing import Any, MutableMapping, Sequence
 
 DEFAULT_LOG_LEVEL = os.getenv("QNA_LOG_LEVEL", "INFO")
 DEFAULT_LOG_DIR = Path(os.getenv("QNA_LOG_DIR", "data/logs"))
+ANALYTICS_LOG_PATH = DEFAULT_LOG_DIR / "analytics.jsonl"
 
 
 def configure_logging(log_level: str | None = None, log_path: Path | None = None) -> None:
@@ -144,3 +145,33 @@ def log_timing(logger: logging.Logger, event: str, **extra: Any):
     else:
         elapsed = (time.perf_counter() - start) * 1000.0
         logger.info(_format_event(event + ".complete", {**extra, "elapsed_ms": elapsed}))
+
+
+class BufferedJsonlWriter:
+    """Buffered writer for analytics-style JSONL logs."""
+
+    def __init__(self, path: Path, *, buffer_size: int = 50) -> None:
+        self.path = Path(path)
+        self.buffer_size = max(1, buffer_size)
+        self._buffer: list[str] = []
+
+    def write(self, payload: MutableMapping[str, Any] | str) -> None:
+        line = payload if isinstance(payload, str) else json.dumps(payload, default=str)
+        self._buffer.append(line.rstrip("\n"))
+        if len(self._buffer) >= self.buffer_size:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self._buffer:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                for line in self._buffer:
+                    handle.write(line + "\n")
+        except OSError:
+            return
+        self._buffer.clear()
+
+    def pending(self) -> int:
+        return len(self._buffer)
