@@ -503,15 +503,17 @@ def main() -> None:
     st.caption("Run semantic search across ingested datasets with optional filters.")
 
     with st.form("search_prompt_form", clear_on_submit=False):
-        prompt_col, action_col = st.columns([4, 1])
+        st.markdown("Search prompt")
+        prompt_col, action_col = st.columns([4, 1], gap="medium")
         with prompt_col:
             query = st.text_input(
                 "Search prompt",
                 placeholder="e.g. reset password workflow",
                 key="search_prompt",
+                label_visibility="collapsed",
             )
         with action_col:
-            form_submitted = st.form_submit_button("Run Search", type="primary")
+            form_submitted = st.form_submit_button("Run Search", type="primary", use_container_width=True)
     min_similarity = st.slider("Minimum similarity", min_value=0.0, max_value=1.0, value=0.6, step=0.05)
     limit = st.slider("Maximum results", min_value=1, max_value=100, value=20, step=1)
     st.markdown("**Similarity Legend**")
