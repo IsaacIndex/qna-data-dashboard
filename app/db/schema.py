@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -80,16 +89,16 @@ class DataFile(Base):
     original_path: Mapped[str] = mapped_column(Text)
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     file_type: Mapped[FileType] = mapped_column(Enum(FileType, name="file_type"))
-    delimiter: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    sheet_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    delimiter: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     selected_columns: Mapped[list[str]] = mapped_column(JSON, default=list)
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     ingestion_status: Mapped[IngestionStatus] = mapped_column(
         Enum(IngestionStatus, name="ingestion_status"), default=IngestionStatus.PENDING
     )
-    error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     records: Mapped[list[QueryRecord]] = relationship(
         back_populates="data_file", cascade="all, delete-orphan"
@@ -99,7 +108,7 @@ class DataFile(Base):
         cascade="all, delete-orphan",
         order_by="IngestionAudit.started_at.desc()",
     )
-    column_preferences: Mapped[list["ColumnPreference"]] = relationship(
+    column_preferences: Mapped[list[ColumnPreference]] = relationship(
         back_populates="data_file",
         cascade="all, delete-orphan",
         order_by="ColumnPreference.updated_at.desc()",
@@ -114,20 +123,20 @@ class SourceBundle(Base):
     original_path: Mapped[str] = mapped_column(Text)
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     file_type: Mapped[FileType] = mapped_column(Enum(FileType, name="bundle_file_type"))
-    delimiter: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    refresh_cadence: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    delimiter: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    refresh_cadence: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ingestion_status: Mapped[IngestionStatus] = mapped_column(
         Enum(IngestionStatus, name="bundle_ingestion_status"), default=IngestionStatus.PENDING
     )
     sheet_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    owner_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    owner_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
-    sheets: Mapped[list["SheetSource"]] = relationship(
+    sheets: Mapped[list[SheetSource]] = relationship(
         back_populates="bundle", cascade="all, delete-orphan", order_by="SheetSource.position_index"
     )
-    audits: Mapped[list["BundleAudit"]] = relationship(
+    audits: Mapped[list[BundleAudit]] = relationship(
         back_populates="bundle",
         cascade="all, delete-orphan",
         order_by="BundleAudit.started_at.desc()",
@@ -142,25 +151,28 @@ class SheetSource(Base):
     sheet_name: Mapped[str] = mapped_column(String(255))
     display_label: Mapped[str] = mapped_column(String(255))
     visibility_state: Mapped[SheetVisibilityState] = mapped_column(
-        Enum(SheetVisibilityState, name="sheet_visibility_state"), default=SheetVisibilityState.VISIBLE
+        Enum(SheetVisibilityState, name="sheet_visibility_state"),
+        default=SheetVisibilityState.VISIBLE,
     )
     status: Mapped[SheetStatus] = mapped_column(
         Enum(SheetStatus, name="sheet_status"), default=SheetStatus.ACTIVE
     )
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     column_schema: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
-    last_refreshed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    checksum: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     position_index: Mapped[int] = mapped_column(Integer, default=0)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     bundle: Mapped[SourceBundle] = relationship(back_populates="sheets")
-    records: Mapped[list["QueryRecord"]] = relationship(back_populates="sheet")
-    metrics: Mapped[list["SheetMetric"]] = relationship(
-        back_populates="sheet", cascade="all, delete-orphan", order_by="SheetMetric.recorded_at.desc()"
+    records: Mapped[list[QueryRecord]] = relationship(back_populates="sheet")
+    metrics: Mapped[list[SheetMetric]] = relationship(
+        back_populates="sheet",
+        cascade="all, delete-orphan",
+        order_by="SheetMetric.recorded_at.desc()",
     )
-    query_links: Mapped[list["QuerySheetLink"]] = relationship(
+    query_links: Mapped[list[QuerySheetLink]] = relationship(
         back_populates="sheet", cascade="all, delete-orphan"
     )
 
@@ -175,11 +187,11 @@ class BundleAudit(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     bundle_id: Mapped[str] = mapped_column(ForeignKey("source_bundles.id", ondelete="CASCADE"))
     status: Mapped[AuditStatus] = mapped_column(Enum(AuditStatus, name="bundle_audit_status"))
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    sheet_summary: Mapped[Optional[dict[str, int]]] = mapped_column(JSON, nullable=True)
-    hidden_sheets_enabled: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
-    initiated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sheet_summary: Mapped[dict[str, int] | None] = mapped_column(JSON, nullable=True)
+    hidden_sheets_enabled: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    initiated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     bundle: Mapped[SourceBundle] = relationship(back_populates="audits")
 
@@ -192,9 +204,9 @@ class SheetMetric(Base):
     metric_type: Mapped[SheetMetricType] = mapped_column(
         Enum(SheetMetricType, name="sheet_metric_type")
     )
-    p50: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    p95: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    p50: Mapped[float | None] = mapped_column(Float, nullable=True)
+    p95: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     sheet: Mapped[SheetSource] = relationship(back_populates="metrics")
 
@@ -204,13 +216,13 @@ class QueryDefinition(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     name: Mapped[str] = mapped_column(String(255))
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     definition: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
-    validation_checksum: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    validation_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
-    sheet_links: Mapped[list["QuerySheetLink"]] = relationship(
+    sheet_links: Mapped[list[QuerySheetLink]] = relationship(
         back_populates="query", cascade="all, delete-orphan"
     )
 
@@ -227,8 +239,8 @@ class QuerySheetLink(Base):
     role: Mapped[QuerySheetRole] = mapped_column(
         Enum(QuerySheetRole, name="query_sheet_role"), default=QuerySheetRole.PRIMARY
     )
-    join_keys: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
-    last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    join_keys: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     query: Mapped[QueryDefinition] = relationship(back_populates="sheet_links")
     sheet: Mapped[SheetSource] = relationship(back_populates="query_links")
@@ -239,22 +251,22 @@ class QueryRecord(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     data_file_id: Mapped[str] = mapped_column(ForeignKey("data_files.id", ondelete="CASCADE"))
-    sheet_id: Mapped[Optional[str]] = mapped_column(
+    sheet_id: Mapped[str | None] = mapped_column(
         ForeignKey("sheet_sources.id", ondelete="SET NULL"), nullable=True
     )
     column_name: Mapped[str] = mapped_column(String(255))
     row_index: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     original_text: Mapped[str] = mapped_column(Text)
-    tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     data_file: Mapped[DataFile] = relationship(back_populates="records")
-    sheet: Mapped[Optional[SheetSource]] = relationship(back_populates="records")
-    embedding: Mapped["EmbeddingVector"] = relationship(
+    sheet: Mapped[SheetSource | None] = relationship(back_populates="records")
+    embedding: Mapped[EmbeddingVector] = relationship(
         back_populates="record", uselist=False, cascade="all, delete-orphan"
     )
-    clusters: Mapped[list["ClusterMembership"]] = relationship(
+    clusters: Mapped[list[ClusterMembership]] = relationship(
         back_populates="record", cascade="all, delete-orphan"
     )
 
@@ -274,7 +286,7 @@ class EmbeddingVector(Base):
     model_version: Mapped[str] = mapped_column(String(255))
     vector_path: Mapped[str] = mapped_column(String(255))
     embedding_dim: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     record: Mapped[QueryRecord] = relationship(back_populates="embedding")
 
@@ -291,10 +303,10 @@ class SimilarityCluster(Base):
     member_count: Mapped[int] = mapped_column(Integer, default=0)
     centroid_similarity: Mapped[float] = mapped_column(Float)
     diversity_score: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     threshold: Mapped[float] = mapped_column(Float)
 
-    memberships: Mapped[list["ClusterMembership"]] = relationship(
+    memberships: Mapped[list[ClusterMembership]] = relationship(
         back_populates="cluster", cascade="all, delete-orphan"
     )
 
@@ -319,12 +331,12 @@ class IngestionAudit(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     data_file_id: Mapped[str] = mapped_column(ForeignKey("data_files.id", ondelete="CASCADE"))
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[AuditStatus] = mapped_column(Enum(AuditStatus, name="audit_status"))
     processed_rows: Mapped[int] = mapped_column(Integer, default=0)
     skipped_rows: Mapped[int] = mapped_column(Integer, default=0)
-    error_log_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_log_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     data_file: Mapped[DataFile] = relationship(back_populates="audits")
 
@@ -334,20 +346,20 @@ class PerformanceMetric(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     metric_type: Mapped[MetricType] = mapped_column(Enum(MetricType, name="metric_type"))
-    data_file_id: Mapped[Optional[str]] = mapped_column(
+    data_file_id: Mapped[str | None] = mapped_column(
         ForeignKey("data_files.id", ondelete="SET NULL"), nullable=True
     )
-    cluster_id: Mapped[Optional[str]] = mapped_column(
+    cluster_id: Mapped[str | None] = mapped_column(
         ForeignKey("similarity_clusters.id", ondelete="SET NULL"), nullable=True
     )
-    benchmark_run_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    benchmark_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     p50_ms: Mapped[float] = mapped_column(Float)
     p95_ms: Mapped[float] = mapped_column(Float)
-    records_per_second: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    records_per_second: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
-    data_file: Mapped[Optional[DataFile]] = relationship()
-    cluster: Mapped[Optional[SimilarityCluster]] = relationship()
+    data_file: Mapped[DataFile | None] = relationship()
+    cluster: Mapped[SimilarityCluster | None] = relationship()
 
 
 class ColumnPreference(Base):
@@ -355,19 +367,19 @@ class ColumnPreference(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     data_file_id: Mapped[str] = mapped_column(ForeignKey("data_files.id", ondelete="CASCADE"))
-    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     selected_columns: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
     max_columns: Mapped[int] = mapped_column(Integer, default=10)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     data_file: Mapped[DataFile] = relationship(back_populates="column_preferences")
-    changes: Mapped[list["ColumnPreferenceChange"]] = relationship(
+    changes: Mapped[list[ColumnPreferenceChange]] = relationship(
         back_populates="preference",
         cascade="all, delete-orphan",
         order_by="ColumnPreferenceChange.changed_at.desc()",
@@ -388,7 +400,7 @@ class ColumnPreferenceChange(Base):
     user_id: Mapped[str] = mapped_column(String(64))
     dataset_display_name: Mapped[str] = mapped_column(String(255))
     selected_columns_snapshot: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
-    changed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     preference: Mapped[ColumnPreference] = relationship(back_populates="changes")
 
@@ -398,12 +410,12 @@ class PreferenceMirror(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     data_file_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    device_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    device_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=0)
     selected_columns: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
     max_columns: Mapped[int] = mapped_column(Integer, default=10)
-    source: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    source: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         UniqueConstraint("data_file_id", "device_id", name="uq_preference_mirror_dataset_device"),

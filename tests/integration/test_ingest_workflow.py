@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-import pytest
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import EmbeddingVector, IngestionStatus

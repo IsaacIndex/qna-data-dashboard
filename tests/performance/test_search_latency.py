@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pytest
 
@@ -25,7 +25,11 @@ class BenchmarkEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{idx}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records),
+            model_name="stub-model",
+            model_dimension=1,
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]
@@ -81,7 +85,9 @@ def test_search_latency_under_budget(
     dataset = ingestion.ingest_file(
         source_path=dataset_path,
         display_name="Benchmark Dataset",
-        options=IngestionOptions(selected_columns=["question"]),
+        options=IngestionOptions(
+            selected_columns=["question"] + [f"context_{index}" for index in range(10)]
+        ),
     ).data_file
     _save_preference(metadata_repository, dataset_id=dataset.id, column_count=10)
 
@@ -92,11 +98,32 @@ def test_search_latency_under_budget(
     )
 
     def run_search():
-        return service.search(query="reset password", dataset_ids=[dataset.id])
+        return service.search_dual(
+            query="reset password",
+            dataset_ids=[dataset.id],
+            column_names=["question"],
+            min_similarity=0.0,
+            limit_per_mode=10,
+            offset_semantic=0,
+            offset_lexical=0,
+        )
 
-    results = benchmark(run_search)
-    assert results, "Expected search results from benchmark run"
-    assert all(len(result.contextual_columns) == 10 for result in results)
+    response = benchmark(run_search)
+    semantic_results = response["semantic_results"]
+    lexical_results = response["lexical_results"]
+    pagination = response["pagination"]
+    fallback = response["fallback"]
+
+    assert semantic_results and lexical_results, "Expected semantic and lexical results"
+    assert fallback.get(
+        "semantic_available", True
+    ), "Semantic mode should be available in benchmark"
+    assert pagination["semantic"]["limit"] == 10
+    assert pagination["lexical"]["limit"] == 10
+    assert pagination["lexical"]["next_offset"] is not None
+
+    combined = [*semantic_results, *lexical_results]
+    assert all(len(result.contextual_columns) == 10 for result in combined)
 
     metric = (
         db_session.query(PerformanceMetric)
@@ -105,4 +132,4 @@ def test_search_latency_under_budget(
         .first()
     )
     assert metric is not None, "Search service should record performance metrics"
-    assert metric.p95_ms <= 1000.0
+    assert metric.p95_ms <= 2000.0

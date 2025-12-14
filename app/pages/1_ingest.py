@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import csv
 import io
-import os
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
 
 import streamlit as st
+from sqlalchemy.orm import Session, sessionmaker
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -39,8 +40,13 @@ from app.services.ingestion import (  # noqa: E402
 )
 from app.services.preferences import persist_column_selection  # noqa: E402
 from app.utils.caching import cache_resource  # noqa: E402
+from app.utils.config import get_data_root  # noqa: E402
 from app.utils.logging import get_logger, log_event, log_timing  # noqa: E402
-from app.utils.session_state import confirm_reset, ensure_session_defaults, request_reset  # noqa: E402
+from app.utils.session_state import (
+    confirm_reset,
+    ensure_session_defaults,
+    request_reset,
+)  # noqa: E402
 
 LOGGER = get_logger(__name__)
 
@@ -55,17 +61,19 @@ class _UploadSheet:
 
 
 @cache_resource
-def _get_session_factory():
+def _get_session_factory() -> sessionmaker[Session]:
     engine = build_engine()
     init_database(engine)
     return create_session_factory(engine)
 
 
 def _data_root() -> Path:
-    return Path(os.getenv("DATA_ROOT", "./data")).expanduser()
+    return get_data_root()
 
 
-def _preview_rows(uploaded_file, sample_rows: int = 5) -> tuple[list[str], list[dict[str, str]]]:
+def _preview_rows(
+    uploaded_file: UploadedFile, sample_rows: int = 5
+) -> tuple[list[str], list[dict[str, str]]]:
     uploaded_file.seek(0)
     if uploaded_file.name.lower().endswith(".csv"):
         content = uploaded_file.read().decode("utf-8")
@@ -112,7 +120,9 @@ def _preview_rows(uploaded_file, sample_rows: int = 5) -> tuple[list[str], list[
     return headers, rows
 
 
-def _collect_sheet_schemas(uploaded_file, delimiter: str | None = None) -> list[_UploadSheet]:
+def _collect_sheet_schemas(
+    uploaded_file: UploadedFile, delimiter: str | None = None
+) -> list[_UploadSheet]:
     """Read the uploaded file and return sheet-like metadata for catalog building."""
     uploaded_file.seek(0)
     filename = uploaded_file.name.lower()
@@ -140,7 +150,7 @@ def _collect_sheet_schemas(uploaded_file, delimiter: str | None = None) -> list[
                 display_label="CSV",
                 status=SheetStatus.ACTIVE,
                 column_schema=column_schema,
-                last_refreshed_at=datetime.now(timezone.utc),
+                last_refreshed_at=datetime.now(UTC),
             )
         ]
 
@@ -175,7 +185,7 @@ def _collect_sheet_schemas(uploaded_file, delimiter: str | None = None) -> list[
                     display_label=sheet_name,
                     status=SheetStatus.ACTIVE,
                     column_schema=column_schema,
-                    last_refreshed_at=datetime.now(timezone.utc),
+                    last_refreshed_at=datetime.now(UTC),
                 )
             )
     finally:
@@ -185,7 +195,9 @@ def _collect_sheet_schemas(uploaded_file, delimiter: str | None = None) -> list[
     return sheets
 
 
-def _build_column_catalog(uploaded_file, delimiter: str | None = None) -> list[dict[str, object]]:
+def _build_column_catalog(
+    uploaded_file: UploadedFile, delimiter: str | None = None
+) -> list[dict[str, object]]:
     sheets = _collect_sheet_schemas(uploaded_file, delimiter)
     if not sheets:
         return []
@@ -210,20 +222,16 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
             st.write("- _No sheet sources registered yet._")
             continue
         for sheet in sheets:
-            visibility = "Hidden Opt-In" if sheet.visibility_state.value == "hidden_opt_in" else "Visible"
+            visibility = (
+                "Hidden Opt-In" if sheet.visibility_state.value == "hidden_opt_in" else "Visible"
+            )
             status = sheet.status.value
             last_refreshed = (
                 sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else "N/A"
             )
             message = (
-                "- ``{label}`` ({visibility}, status {status}, "
-                "{rows} rows, refreshed {refreshed})".format(
-                    label=sheet.display_label,
-                    visibility=visibility,
-                    status=status,
-                    rows=sheet.row_count,
-                    refreshed=last_refreshed,
-                )
+                f"- ``{sheet.display_label}`` ({visibility}, status {status}, "
+                f"{sheet.row_count} rows, refreshed {last_refreshed})"
             )
             if sheet.status != SheetStatus.ACTIVE:
                 st.warning(message)
@@ -232,11 +240,11 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
 
 
 def run_ingestion(
-    uploaded_file,
+    uploaded_file: UploadedFile,
     selected_columns: Sequence[str],
     delimiter: str | None,
     hidden_sheet_overrides: Sequence[str],
-):
+) -> None:
     session_factory = _get_session_factory()
 
     with session_scope(session_factory) as session:
@@ -248,7 +256,9 @@ def run_ingestion(
             data_root=_data_root(),
         )
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=Path(uploaded_file.name).suffix
+        ) as tmp:
             tmp.write(uploaded_file.read())
             temp_path = Path(tmp.name)
         uploaded_file.seek(0)
@@ -277,7 +287,8 @@ def run_ingestion(
 def main() -> None:
     st.title("Ingest Sheet Sources")
     st.caption(
-        "Upload CSV or Excel files, expose individual sheets to the catalog, and opt in hidden tabs with audit logging."
+        "Upload CSV or Excel files, expose individual sheets to the catalog, "
+        "and opt in hidden tabs with audit logging."
     )
 
     state = ensure_session_defaults()
@@ -287,7 +298,7 @@ def main() -> None:
         st.session_state[reset_flag] = True
     if st.session_state.get(reset_flag):
         st.warning(
-            "Reset will clear saved selections for this session so you can start clean on the next upload.",
+            "Reset clears saved selections for this session before the next upload.",
             icon="⚠️",
         )
         if st.button("Confirm reset", type="primary", key="ingest_reset_confirm"):
@@ -316,13 +327,19 @@ def main() -> None:
                 st.table(preview_rows)
 
             picker_options = _build_column_catalog(uploaded_file, delimiter)
-            available_options = [option for option in picker_options if option["availability"] == "available"]
-            unavailable_options = [option for option in picker_options if option["availability"] != "available"]
+            available_options = [
+                option for option in picker_options if option["availability"] == "available"
+            ]
+            unavailable_options = [
+                option for option in picker_options if option["availability"] != "available"
+            ]
 
             display_labels = {
-                option["column_name"]: f"{option['display_label']} ({', '.join(option['sheet_chips'])})"
-                if option.get("sheet_chips")
-                else option["display_label"]
+                option["column_name"]: (
+                    f"{option['display_label']} ({', '.join(option['sheet_chips'])})"
+                    if option.get("sheet_chips")
+                    else option["display_label"]
+                )
                 for option in available_options
             }
             available_names = list(display_labels.keys())
@@ -343,7 +360,9 @@ def main() -> None:
             )
 
             if unavailable_options:
-                st.warning("Unavailable or missing headers are skipped from selection but listed below.")
+                st.warning(
+                    "Unavailable or missing headers are skipped from selection but listed below."
+                )
                 for option in unavailable_options:
                     chips = ", ".join(option.get("sheet_chips", []))
                     st.caption(f"- {option['display_label']} ({chips}) — {option['availability']}")
@@ -369,8 +388,8 @@ def main() -> None:
                         st.info("Visible sheets detected: " + ", ".join(visible_sheet_names))
                     if hidden_sheet_names:
                         st.warning(
-                            "Hidden sheets remain excluded unless explicitly enabled. "
-                            "Select any hidden sheets you want to include; this will be recorded in audit logs."
+                            "Hidden sheets stay excluded unless explicitly enabled. "
+                            "Select hidden sheets to include; this will be recorded in audit logs."
                         )
                         hidden_sheet_overrides = st.multiselect(
                             "Hidden sheets to include",
@@ -415,9 +434,7 @@ def main() -> None:
                 st.table(sheet_rows)
 
             if hidden_sheet_overrides:
-                st.info(
-                    "Hidden sheet opt-ins recorded: " + ", ".join(hidden_sheet_overrides)
-                )
+                st.info("Hidden sheet opt-ins recorded: " + ", ".join(hidden_sheet_overrides))
         except Exception as error:
             st.error(f"Ingestion failed: {error}")
 

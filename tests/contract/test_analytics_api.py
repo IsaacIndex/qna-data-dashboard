@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,7 +22,9 @@ class AnalyticsEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{idx}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records), model_name="stub-model", model_dimension=1
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]

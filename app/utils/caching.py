@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache, wraps
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import ParamSpec, TypeVar
 
 try:
     import streamlit as st

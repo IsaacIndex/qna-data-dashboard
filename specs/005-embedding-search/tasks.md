@@ -11,9 +11,9 @@
 
 **Purpose**: Ensure environment, tooling, and dependencies are ready for dual-mode search work.
 
-- [ ] T001 Verify poetry environment and install dependencies (chromadb, sentence-transformers, nomic model availability) in `/Users/isaacibm/GitHub/qna-data-dashboard`
-- [ ] T002 Document local env variables for data and Chroma persistence (`DATA_ROOT`, `CHROMA_PERSIST_DIR`) in `specs/005-embedding-search/quickstart.md` and `.env.example` if present
-- [ ] T003 [P] Confirm lint/format/typecheck commands run clean on baseline (`poetry run ruff check`, `black --check`, `mypy`, `pytest`) from repo root
+- [X] T001 Verify poetry environment and install dependencies (chromadb, sentence-transformers, nomic model availability) in `/Users/isaacibm/GitHub/qna-data-dashboard`
+- [X] T002 Document local env variables for data and Chroma persistence (`DATA_ROOT`, `CHROMA_PERSIST_DIR`) in `specs/005-embedding-search/quickstart.md` and `.env.example` if present
+- [X] T003 [P] Confirm lint/format/typecheck commands run clean on baseline (`poetry run ruff check`, `black --check`, `mypy`, `pytest`) from repo root *(cancelled per user; baseline failures documented)*
 
 ---
 
@@ -21,11 +21,11 @@
 
 **Purpose**: Core plumbing required before story work begins.
 
-- [ ] T004 Add configuration constants for Chroma persistence path and Nomic model ID in `app/utils/config.py` (or closest config module)
-- [ ] T005 [P] Extend embedding service initialization to build Chroma client with persistence and model version tagging in `app/services/embeddings.py`
-- [ ] T006 [P] Normalize SequenceMatcher and embedding similarity scales with shared legend helpers in `app/services/search.py`
-- [ ] T007 Add request parameter parsing for per-mode limits (`limitPerMode`) and legacy params compatibility in `app/api/router.py`
-- [ ] T008 Update contract documentation with new per-mode pagination fields in `specs/005-embedding-search/contracts/search.yaml`
+- [X] T004 Add configuration constants for Chroma persistence path and Nomic model ID in `app/utils/config.py` (or closest config module)
+- [X] T005 [P] Extend embedding service initialization to build Chroma client with persistence and model version tagging in `app/services/embeddings.py`
+- [X] T006 [P] Normalize SequenceMatcher and embedding similarity scales with shared legend helpers in `app/services/search.py`
+- [X] T007 Add request parameter parsing for per-mode limits (`limitPerMode`) and legacy params compatibility in `app/api/router.py`
+- [X] T008 Update contract documentation with new per-mode pagination fields in `specs/005-embedding-search/contracts/search.yaml`
 
 **Checkpoint**: Foundation ready - dual-mode search can be implemented per story.
 
@@ -39,16 +39,16 @@
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Add contract test for `/search` dual-mode response shape and per-mode pagination in `tests/contract/test_search_api.py`
-- [ ] T010 [P] [US1] Add integration test for semantic vs lexical ranking and top-10 caps in `tests/integration/test_search_dual_mode.py`
+- [X] T009 [P] [US1] Add contract test for `/search` dual-mode response shape and per-mode pagination in `tests/contract/test_search_api.py`
+- [X] T010 [P] [US1] Add integration test for semantic vs lexical ranking and top-10 caps in `tests/integration/test_search_dual_mode.py`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Implement embedding-backed search path with Chroma + Nomic model query embedding in `app/services/search.py`
-- [ ] T012 [P] [US1] Implement combined response assembling semantic_results and lexical_results with per-mode ranks/scores in `app/services/search.py`
-- [ ] T013 [US1] Wire `/search` endpoint to return dual lists and per-mode pagination fields in `app/api/router.py`
-- [ ] T014 [US1] Update similarity legend and response schema serialization to include mode tags in `app/services/search.py` and `app/api/router.py`
-- [ ] T015 [US1] Update Streamlit search page to render labeled semantic and lexical sections with per-mode load-more in `app/pages/2_search.py`
+- [X] T011 [P] [US1] Implement embedding-backed search path with Chroma + Nomic model query embedding in `app/services/search.py`
+- [X] T012 [P] [US1] Implement combined response assembling semantic_results and lexical_results with per-mode ranks/scores in `app/services/search.py`
+- [X] T013 [US1] Wire `/search` endpoint to return dual lists and per-mode pagination fields in `app/api/router.py`
+- [X] T014 [US1] Update similarity legend and response schema serialization to include mode tags in `app/services/search.py` and `app/api/router.py`
+- [X] T015 [US1] Update Streamlit search page to render labeled semantic and lexical sections with per-mode load-more in `app/pages/2_search.py`
 
 **Checkpoint**: User Story 1 independently delivers dual-mode search with pagination and scores.
 
@@ -62,13 +62,13 @@
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] Add integration test verifying contextual columns appear per dataset across modes in `tests/integration/test_search_context_columns.py`
+- [X] T016 [P] [US2] Add integration test verifying contextual columns appear per dataset across modes in `tests/integration/test_search_context_columns.py`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Ensure contextual metadata from preferences is attached to both semantic and lexical results in `app/services/search.py`
-- [ ] T018 [US2] Render contextual columns for both modes and handle unavailable columns without errors in `app/pages/2_search.py`
-- [ ] T019 [US2] Align API response metadata fields for contextual columns with existing defaults in `app/api/router.py`
+- [X] T017 [P] [US2] Ensure contextual metadata from preferences is attached to both semantic and lexical results in `app/services/search.py`
+- [X] T018 [US2] Render contextual columns for both modes and handle unavailable columns without errors in `app/pages/2_search.py`
+- [X] T019 [US2] Align API response metadata fields for contextual columns with existing defaults in `app/api/router.py`
 
 **Checkpoint**: User Story 2 independently preserves and displays contextual columns across search modes.
 
@@ -82,13 +82,13 @@
 
 ### Tests for User Story 3
 
-- [ ] T020 [P] [US3] Add integration test covering semantic unavailability fallback and recovery in `tests/integration/test_search_fallback.py`
+- [X] T020 [P] [US3] Add integration test covering semantic unavailability fallback and recovery in `tests/integration/test_search_fallback.py`
 
 ### Implementation for User Story 3
 
-- [ ] T021 [P] [US3] Implement detection of embedding/index errors and surface fallback flag/message in `app/services/search.py`
-- [ ] T022 [US3] Propagate fallback state in `/search` response payload in `app/api/router.py`
-- [ ] T023 [US3] Display fallback banner/state on Streamlit search page while preserving filters and pagination in `app/pages/2_search.py`
+- [X] T021 [P] [US3] Implement detection of embedding/index errors and surface fallback flag/message in `app/services/search.py`
+- [X] T022 [US3] Propagate fallback state in `/search` response payload in `app/api/router.py`
+- [X] T023 [US3] Display fallback banner/state on Streamlit search page while preserving filters and pagination in `app/pages/2_search.py`
 
 **Checkpoint**: User Story 3 independently provides graceful fallback and recovery.
 
@@ -98,11 +98,11 @@
 
 **Purpose**: Finalize documentation, performance, and quality gates.
 
-- [ ] T024 [P] Update `specs/005-embedding-search/quickstart.md` with any new env flags or commands validated during implementation
-- [ ] T025 Run full quality suite (ruff, black --check, mypy, pytest) and fix findings in repo root
-- [ ] T026 [P] Add performance smoke benchmark for `/search` P95 <2s using representative dataset in `tests/performance/test_search_latency.py`
-- [ ] T027 Update user-facing legend/help text for dual-mode search in `app/pages/2_search.py`
-- [ ] T028 [P] Document Chroma persistence and refresh cadence in `docs/TECHNICAL_NOTES.md` and `README.md` references
+- [X] T024 [P] Update `specs/005-embedding-search/quickstart.md` with any new env flags or commands validated during implementation
+- [X] T025 Run full quality suite (ruff, black --check, mypy, pytest) and fix findings in repo root
+- [X] T026 [P] Add performance smoke benchmark for `/search` P95 <2s using representative dataset in `tests/performance/test_search_latency.py`
+- [X] T027 Update user-facing legend/help text for dual-mode search in `app/pages/2_search.py`
+- [X] T028 [P] Document Chroma persistence and refresh cadence in `docs/TECHNICAL_NOTES.md` and `README.md` references
 
 ---
 

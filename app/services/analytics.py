@@ -4,16 +4,16 @@ import math
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import (
-    ClusterMembership,
     ClusteringAlgorithm,
+    ClusterMembership,
     MetricType,
     QueryRecord,
     SimilarityCluster,
@@ -36,7 +36,7 @@ class AnalyticsEvent:
     tab: str | None = None
     success: bool = True
     detail: str | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -243,10 +243,7 @@ class AnalyticsService:
             sheet = rows[0].sheet
             cluster_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{scope_id}:{column_name}"))
             centroid_text = rows[0].text
-            similarities = [
-                self._similarity(centroid_text, row.text)
-                for row in rows
-            ]
+            similarities = [self._similarity(centroid_text, row.text) for row in rows]
             average_similarity = sum(similarities) / len(similarities) if similarities else 0.0
             unique_texts = {row.text.lower().strip() for row in rows if row.text}
             diversity = len(unique_texts) / len(rows) if rows else 0.0
@@ -269,7 +266,7 @@ class AnalyticsService:
             )
             clusters.append(cluster)
 
-            for record, similarity in zip(rows, similarities):
+            for record, similarity in zip(rows, similarities, strict=False):
                 memberships.append(
                     ClusterMembership(
                         cluster_id=cluster_id,
@@ -353,7 +350,7 @@ class AnalyticsService:
             total_queries=total,
             unique_topics_estimate=len(clusters),
             redundancy_ratio=redundancy,
-            last_refreshed_at=datetime.now(timezone.utc),
+            last_refreshed_at=datetime.now(UTC),
         )
 
     def _load_records(self, dataset_ids: Sequence[str] | None) -> list[QueryRecord]:

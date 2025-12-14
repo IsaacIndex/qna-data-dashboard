@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import csv
 import io
-from pathlib import Path
-from typing import Sequence
 import warnings
+from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic._internal._generate_schema import UnsupportedFieldAttributeWarning
 
 from app.api.router import create_app
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
-from pydantic._internal._generate_schema import UnsupportedFieldAttributeWarning
 
 warnings.filterwarnings("ignore", category=UnsupportedFieldAttributeWarning)
 
@@ -30,7 +30,9 @@ class ApiEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{index}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records), model_name="stub-model", model_dimension=1
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]

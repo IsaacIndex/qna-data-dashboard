@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.db.schema import SheetStatus
 from app.services.ingestion import ColumnCatalogEntry, aggregate_column_catalog
@@ -17,7 +17,7 @@ class _SheetStub:
 
 
 def test_catalog_dedupes_and_merges_availability() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sheets = [
         _SheetStub(
             id="s1",

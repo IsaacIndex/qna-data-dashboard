@@ -4,9 +4,9 @@ import csv
 import hashlib
 import math
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 try:  # Optional dependency: required for Excel preview support.
     from openpyxl import load_workbook
@@ -103,8 +103,8 @@ class QueryBuilderService:
             alias_map[selection.alias] = selection
             sheet_map[selection.alias] = sheet
 
-        assert primary_selection is not None  # for type checking
-        assert primary_sheet is not None
+        if primary_selection is None or primary_sheet is None:
+            raise QueryValidationError("Primary sheet selection is required.")
 
         # Load primary sheet rows to seed the result set.
         primary_rows = self._load_sheet_rows(primary_sheet)
@@ -177,9 +177,15 @@ class QueryBuilderService:
             raise QueryValidationError(f"Join keys required for alias '{join_alias}'.")
 
         primary_lookup = {
-            str(column.get("name")): column for column in primary_schema if column.get("name") is not None
+            str(column.get("name")): column
+            for column in primary_schema
+            if column.get("name") is not None
         }
-        join_lookup = {str(column.get("name")): column for column in join_schema if column.get("name") is not None}
+        join_lookup = {
+            str(column.get("name")): column
+            for column in join_schema
+            if column.get("name") is not None
+        }
 
         warnings: list[str] = []
         for key in join_keys:
@@ -222,7 +228,9 @@ class QueryBuilderService:
                 raise QueryValidationError("Excel preview requires the 'openpyxl' dependency.")
             return self._load_excel_rows(path=path, sheet_name=sheet.sheet_name)
 
-        raise QueryValidationError(f"Unsupported file type for preview: {data_file.file_type.value}")
+        raise QueryValidationError(
+            f"Unsupported file type for preview: {data_file.file_type.value}"
+        )
 
     def _load_csv_rows(self, *, path: Path, delimiter: str) -> list[dict[str, object]]:
         with path.open("r", encoding="utf-8", newline="") as handle:
@@ -282,7 +290,9 @@ class QueryBuilderService:
         for merged in combined_rows:
             primary_row = merged.get(primary_alias)
             if primary_row is None:
-                raise QueryValidationError(f"Primary alias '{primary_alias}' missing in join context.")
+                raise QueryValidationError(
+                    f"Primary alias '{primary_alias}' missing in join context."
+                )
             key = tuple(primary_row.get(join_key) for join_key in join_keys)
             matches = index.get(key)
             if not matches:
@@ -324,7 +334,11 @@ class QueryBuilderService:
         if operator == "ne":
             return value != expected
         if operator == "contains":
-            return isinstance(value, str) and isinstance(expected, str) and expected.lower() in value.lower()
+            return (
+                isinstance(value, str)
+                and isinstance(expected, str)
+                and expected.lower() in value.lower()
+            )
         if operator in {"gt", "lt"}:
             lhs = self._coerce_number(value)
             rhs = self._coerce_number(expected)
@@ -414,7 +428,9 @@ class QueryBuilderService:
         alias, column = self._resolve_expression_alias(expression)
         resolved_alias = alias or primary_alias
         if resolved_alias not in alias_map:
-            raise QueryValidationError(f"Unknown sheet alias '{resolved_alias}' in projection '{expression}'.")
+            raise QueryValidationError(
+                f"Unknown sheet alias '{resolved_alias}' in projection '{expression}'."
+            )
         if not column:
             raise QueryValidationError(f"Column missing in projection '{expression}'.")
         return resolved_alias, column
@@ -476,7 +492,7 @@ class QueryBuilderService:
         return str(value)
 
     def _coerce_number(self, value: object) -> float | None:
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return float(value)
         if isinstance(value, str):
             try:
@@ -486,7 +502,7 @@ class QueryBuilderService:
         return None
 
     def _hash_sheet_identifier(self, bundle_hash: str, sheet_name: str) -> str:
-        combined = f"{bundle_hash}:{sheet_name}".encode("utf-8")
+        combined = f"{bundle_hash}:{sheet_name}".encode()
         digest = hashlib.sha256()
         digest.update(combined)
         return digest.hexdigest()

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
-
-import pytest
 
 from app.db.metadata import MetadataRepository, session_scope
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
@@ -23,7 +21,9 @@ class PreferencesEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{index}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records), model_name="stub-model", model_dimension=1
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]
@@ -87,7 +87,7 @@ def test_preferences_persist_across_sessions_and_reset(
                 SelectedColumn(column_name="stage", display_label="Stage", position=1),
             ],
             max_columns=5,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         saved = service.save_preference(snapshot)
         assert [column.column_name for column in saved.selected_columns] == ["owner", "stage"]

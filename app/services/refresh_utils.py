@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +26,9 @@ def match_sheets(
     discovered: Sequence[DiscoveredSheetSnapshot],
     *,
     tolerance: str = "allow_same_schema",
-) -> tuple[list[tuple[DiscoveredSheetSnapshot, ExistingSheetSnapshot | None]], list[ExistingSheetSnapshot]]:
+) -> tuple[
+    list[tuple[DiscoveredSheetSnapshot, ExistingSheetSnapshot | None]], list[ExistingSheetSnapshot]
+]:
     existing_by_name = {sheet.sheet_name: sheet for sheet in existing}
     unmatched_existing: dict[str, ExistingSheetSnapshot] = {sheet.id: sheet for sheet in existing}
 

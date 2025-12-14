@@ -64,7 +64,7 @@ def test_preview_query_sums_revenue_against_budget(
         hidden_sheet_policy=HiddenSheetPolicy(default_action="exclude"),
     )
 
-    workbook_result = ingestion_service.ingest_bundle(
+    ingestion_service.ingest_bundle(
         source_path=workbook_path,
         display_name="Integration Workbook",
         options=workbook_options,
@@ -75,8 +75,12 @@ def test_preview_query_sums_revenue_against_budget(
         options=csv_options,
     )
 
-    north_sheet = next(sheet for sheet in metadata_repository.list_sheet_sources() if sheet.sheet_name == "North")
-    csv_sheet = next(sheet for sheet in metadata_repository.list_sheet_sources() if sheet.sheet_name == "__csv__")
+    north_sheet = next(
+        sheet for sheet in metadata_repository.list_sheet_sources() if sheet.sheet_name == "North"
+    )
+    csv_sheet = next(
+        sheet for sheet in metadata_repository.list_sheet_sources() if sheet.sheet_name == "__csv__"
+    )
 
     query_service = QueryBuilderService(metadata_repository=metadata_repository)
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import csv
 import os
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
 
 try:  # pragma: no cover - optional dependency for Excel datasets
     from openpyxl import load_workbook
@@ -31,11 +31,11 @@ from .schema import (
     IngestionStatus,
     MetricType,
     PerformanceMetric,
+    PreferenceMirror,
     QueryDefinition,
     QueryRecord,
     QuerySheetLink,
     QuerySheetRole,
-    PreferenceMirror,
     SheetMetric,
     SheetMetricType,
     SheetSource,
@@ -87,7 +87,7 @@ def session_scope(session_factory: sessionmaker[Session]) -> Iterator[Session]:
 class MetadataRepository:
     """Data access helpers for SQLite-backed metadata and analytics."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
         self.session = session
         self._row_cache: dict[tuple[str, str | None], list[dict[str, object]]] = {}
         self._sheet_cache: dict[str, SheetSource | None] = {}
@@ -148,14 +148,18 @@ class MetadataRepository:
 
     # Source bundle helpers -------------------------------------------
     def list_source_bundles(self) -> Sequence[SourceBundle]:
-        stmt: Select[tuple[SourceBundle]] = select(SourceBundle).order_by(SourceBundle.created_at.desc())
+        stmt: Select[tuple[SourceBundle]] = select(SourceBundle).order_by(
+            SourceBundle.created_at.desc()
+        )
         return self.session.execute(stmt).scalars().all()
 
     def get_source_bundle(self, bundle_id: str) -> SourceBundle | None:
         return self.session.get(SourceBundle, bundle_id)
 
     def get_source_bundle_by_hash(self, file_hash: str) -> SourceBundle | None:
-        stmt: Select[tuple[SourceBundle]] = select(SourceBundle).where(SourceBundle.file_hash == file_hash)
+        stmt: Select[tuple[SourceBundle]] = select(SourceBundle).where(
+            SourceBundle.file_hash == file_hash
+        )
         return self.session.execute(stmt).scalars().first()
 
     def create_source_bundle(
@@ -200,7 +204,7 @@ class MetadataRepository:
             bundle.refresh_cadence = refresh_cadence
         if original_path is not None:
             bundle.original_path = original_path
-        bundle.updated_at = datetime.now(timezone.utc)
+        bundle.updated_at = datetime.now(UTC)
         return bundle
 
     # Sheet source helpers --------------------------------------------
@@ -353,7 +357,9 @@ class MetadataRepository:
         return record
 
     def delete_query_records_for_sheet(self, sheet_id: str) -> None:
-        stmt: Select[tuple[QueryRecord]] = select(QueryRecord).where(QueryRecord.sheet_id == sheet_id)
+        stmt: Select[tuple[QueryRecord]] = select(QueryRecord).where(
+            QueryRecord.sheet_id == sheet_id
+        )
         for record in self.session.execute(stmt).scalars():
             self.session.delete(record)
 
@@ -404,14 +410,16 @@ class MetadataRepository:
             metric_type=metric_type,
             p50=p50,
             p95=p95,
-            recorded_at=recorded_at or datetime.now(timezone.utc),
+            recorded_at=recorded_at or datetime.now(UTC),
         )
         self.session.add(metric)
         return metric
 
     # Query definitions ------------------------------------------------
     def list_query_definitions(self) -> Sequence[QueryDefinition]:
-        stmt: Select[tuple[QueryDefinition]] = select(QueryDefinition).order_by(QueryDefinition.created_at.desc())
+        stmt: Select[tuple[QueryDefinition]] = select(QueryDefinition).order_by(
+            QueryDefinition.created_at.desc()
+        )
         return self.session.execute(stmt).scalars().all()
 
     def get_query_definition(self, query_id: str) -> QueryDefinition | None:
@@ -448,7 +456,7 @@ class MetadataRepository:
             query.definition = dict(definition)
         if validation_checksum is not None:
             query.validation_checksum = validation_checksum
-        query.updated_at = datetime.now(timezone.utc)
+        query.updated_at = datetime.now(UTC)
         return query
 
     def create_query_with_links(
@@ -505,7 +513,9 @@ class MetadataRepository:
             self.session.add(link)
 
     def list_query_links_for_sheet(self, sheet_id: str) -> Sequence[QuerySheetLink]:
-        stmt: Select[tuple[QuerySheetLink]] = select(QuerySheetLink).where(QuerySheetLink.sheet_id == sheet_id)
+        stmt: Select[tuple[QuerySheetLink]] = select(QuerySheetLink).where(
+            QuerySheetLink.sheet_id == sheet_id
+        )
         return self.session.execute(stmt).scalars().all()
 
     def list_query_definitions_with_links(self) -> Sequence[QueryDefinition]:
@@ -582,7 +592,7 @@ class MetadataRepository:
             processed_rows=processed_rows,
             skipped_rows=skipped_rows,
             error_log_path=error_log_path,
-            started_at=started_at or datetime.now(timezone.utc),
+            started_at=started_at or datetime.now(UTC),
             completed_at=completed_at,
         )
         self.session.add(audit)
@@ -648,7 +658,7 @@ class MetadataRepository:
             record.selected_columns = normalized
             record.max_columns = max_columns
             record.is_active = True
-            record.updated_at = datetime.now(timezone.utc)
+            record.updated_at = datetime.now(UTC)
         self.session.flush()
         self._record_preference_change(
             preference=record,
@@ -672,7 +682,7 @@ class MetadataRepository:
             return
         record.is_active = False
         record.selected_columns = []
-        record.updated_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(UTC)
         self.session.flush()
         self._record_preference_change(
             preference=record,
@@ -720,7 +730,7 @@ class MetadataRepository:
                 max_columns=sanitized_max,
                 version=version,
                 source=source,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
             self.session.add(record)
         else:
@@ -728,7 +738,7 @@ class MetadataRepository:
             record.max_columns = sanitized_max
             record.version = version
             record.source = source or record.source
-            record.updated_at = datetime.now(timezone.utc)
+            record.updated_at = datetime.now(UTC)
 
         self.session.flush()
         return record
@@ -769,7 +779,9 @@ class MetadataRepository:
             )
         return catalog
 
-    def list_column_preference_changes(self, preference_id: str) -> Sequence[ColumnPreferenceChange]:
+    def list_column_preference_changes(
+        self, preference_id: str
+    ) -> Sequence[ColumnPreferenceChange]:
         stmt = (
             select(ColumnPreferenceChange)
             .where(ColumnPreferenceChange.preference_id == preference_id)
@@ -810,9 +822,7 @@ class MetadataRepository:
             )
 
         if len(normalized) > max_columns:
-            raise ValueError(
-                f"Selection exceeds the maximum allowed columns ({max_columns})."
-            )
+            raise ValueError(f"Selection exceeds the maximum allowed columns ({max_columns}).")
         return normalized
 
     def _record_preference_change(
@@ -884,7 +894,9 @@ class MetadataRepository:
             return None
         return sheet.sheet_name
 
-    def _load_dataset_rows(self, data_file: DataFile, *, sheet_name: str | None) -> list[dict[str, object]]:
+    def _load_dataset_rows(
+        self, data_file: DataFile, *, sheet_name: str | None
+    ) -> list[dict[str, object]]:
         sheet_key = sheet_name or "__default__"
         cache_key = (data_file.id, sheet_key)
         if cache_key in self._row_cache:
@@ -919,9 +931,7 @@ class MetadataRepository:
 
     def _load_excel_rows(self, *, path: Path, sheet_name: str | None) -> list[dict[str, object]]:
         if load_workbook is None:
-            raise RuntimeError(
-                "Excel contextual column hydration requires the 'openpyxl' dependency to be installed."
-            )
+            raise RuntimeError("Excel contextual column hydration requires the 'openpyxl' package.")
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
             target_sheet = sheet_name or workbook.sheetnames[0]
@@ -953,7 +963,7 @@ class MetadataRepository:
         non_null = [value for value in values if value not in (None, "")]
         if not non_null:
             return "string"
-        if all(isinstance(value, (int, float)) for value in non_null):
+        if all(isinstance(value, int | float) for value in non_null):
             return "number"
         if all(isinstance(value, bool) for value in non_null):
             return "boolean"

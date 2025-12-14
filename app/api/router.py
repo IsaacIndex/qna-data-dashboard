@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import json
-import os
+import logging
 import tempfile
 import time
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.metadata import (
@@ -19,7 +19,7 @@ from app.db.metadata import (
     init_database,
     session_scope,
 )
-from app.db.schema import QuerySheetRole, SheetStatus
+from app.db.schema import BundleAudit, QuerySheetRole, SheetSource, SheetStatus, SourceBundle
 from app.services.analytics import AnalyticsClient, AnalyticsService
 from app.services.embeddings import EmbeddingService
 from app.services.ingestion import (
@@ -29,7 +29,7 @@ from app.services.ingestion import (
     IngestionService,
     aggregate_column_catalog,
 )
-from app.services.search import SearchService, build_contextual_defaults, build_similarity_legend
+from app.services.preferences import ColumnPreferenceService, PreferenceSnapshot, SelectedColumn
 from app.services.query_builder import (
     QueryBuilderService,
     QueryConflictError,
@@ -39,7 +39,10 @@ from app.services.query_builder import (
     QuerySheetSelection,
     QueryValidationError,
 )
-from app.services.preferences import ColumnPreferenceService, PreferenceSnapshot, SelectedColumn
+from app.services.search import SearchService, build_contextual_defaults, build_similarity_legend
+from app.utils.config import get_data_root
+
+LOGGER = logging.getLogger(__name__)
 
 
 class SelectedColumnPayload(BaseModel):
@@ -148,7 +151,7 @@ class AggregatedColumnCatalogResponse(BaseModel):
 
 def create_app(
     *,
-    embedding_service: Optional[object] = None,
+    embedding_service: object | None = None,
 ) -> FastAPI:
     """Create a FastAPI instance exposing ingestion metadata endpoints."""
     app = FastAPI(
@@ -159,18 +162,20 @@ def create_app(
     engine = build_engine()
     init_database(engine)
     SessionFactory = create_session_factory(engine)
-    data_root = Path(os.getenv("DATA_ROOT", "./data")).expanduser()
+    data_root = get_data_root()
 
-    def get_repository():
+    def get_repository() -> Iterator[MetadataRepository]:
         with session_scope(SessionFactory) as session:
             yield MetadataRepository(session)
 
-    def embedding_factory(repo: MetadataRepository):
+    def embedding_factory(repo: MetadataRepository) -> EmbeddingService:
         if embedding_service is not None:
             return embedding_service
         return EmbeddingService(metadata_repository=repo)
 
-    def get_ingestion_service(repo: MetadataRepository = Depends(get_repository)):
+    def get_ingestion_service(
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository)
+    ) -> IngestionService:
         service = embedding_factory(repo)
         return IngestionService(
             metadata_repository=repo,
@@ -178,17 +183,23 @@ def create_app(
             data_root=data_root,
         )
 
-    def get_search_service(repo: MetadataRepository = Depends(get_repository)):
+    def get_search_service(
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository)
+    ) -> SearchService:
         service = embedding_factory(repo)
         return SearchService(
             metadata_repository=repo,
             embedding_service=service,
         )
 
-    def get_query_builder_service(repo: MetadataRepository = Depends(get_repository)):
+    def get_query_builder_service(
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository)
+    ) -> QueryBuilderService:
         return QueryBuilderService(metadata_repository=repo)
 
-    def get_preference_service(repo: MetadataRepository = Depends(get_repository)):
+    def get_preference_service(
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository)
+    ) -> ColumnPreferenceService:
         return ColumnPreferenceService(metadata_repository=repo)
 
     def _split_csv(value: str | None) -> list[str] | None:
@@ -216,13 +227,19 @@ def create_app(
         try:
             payload = json.loads(value)
         except json.JSONDecodeError as error:
-            raise HTTPException(status_code=400, detail="hiddenSheetPolicy must be valid JSON.") from error
+            raise HTTPException(
+                status_code=400,
+                detail="hiddenSheetPolicy must be valid JSON.",
+            ) from error
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="hiddenSheetPolicy must be an object.")
         default_action = payload.get("defaultAction", "exclude")
         overrides = payload.get("overrides") or []
         if default_action not in {"exclude", "include_all"}:
-            raise HTTPException(status_code=400, detail="defaultAction must be 'exclude' or 'include_all'.")
+            raise HTTPException(
+                status_code=400,
+                detail="defaultAction must be 'exclude' or 'include_all'.",
+            )
         if not isinstance(overrides, list) or not all(isinstance(item, str) for item in overrides):
             raise HTTPException(status_code=400, detail="overrides must be an array of strings.")
         return HiddenSheetPolicy(
@@ -230,7 +247,7 @@ def create_app(
             overrides=overrides,
         )
 
-    def _serialize_bundle(bundle) -> dict[str, object]:
+    def _serialize_bundle(bundle: SourceBundle) -> dict[str, object]:
         return {
             "id": bundle.id,
             "displayName": bundle.display_name,
@@ -243,7 +260,7 @@ def create_app(
             "updatedAt": bundle.updated_at.isoformat(),
         }
 
-    def _serialize_sheet(sheet) -> dict[str, object]:
+    def _serialize_sheet(sheet: SheetSource) -> dict[str, object]:
         return {
             "id": sheet.id,
             "bundleId": sheet.bundle_id,
@@ -253,14 +270,16 @@ def create_app(
             "status": sheet.status.value,
             "rowCount": sheet.row_count,
             "columnSchema": sheet.column_schema,
-            "lastRefreshedAt": sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else None,
+            "lastRefreshedAt": (
+                sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else None
+            ),
             "checksum": sheet.checksum,
             "positionIndex": sheet.position_index,
             "description": sheet.description,
             "tags": sheet.tags,
         }
 
-    def _serialize_bundle_audit(audit) -> dict[str, object]:
+    def _serialize_bundle_audit(audit: BundleAudit) -> dict[str, object]:
         return {
             "id": audit.id,
             "bundleId": audit.bundle_id,
@@ -301,13 +320,17 @@ def create_app(
                 for column in payload.selected_columns
             ],
             max_columns=max_columns,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             version=0,
             source="preference",
         )
 
     def _snapshot_from_mirror(payload: PreferenceMirrorRequest) -> PreferenceSnapshot:
-        max_columns = payload.max_columns if payload.max_columns is not None else max(len(payload.selected_columns), 1)
+        max_columns = (
+            payload.max_columns
+            if payload.max_columns is not None
+            else max(len(payload.selected_columns), 1)
+        )
         return PreferenceSnapshot(
             dataset_id=payload.dataset_id,
             user_id=payload.device_id,
@@ -320,7 +343,7 @@ def create_app(
                 for column in payload.selected_columns
             ],
             max_columns=max_columns or 1,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             version=payload.version,
             source=payload.source or "mirror",
         )
@@ -349,7 +372,9 @@ def create_app(
     )
     def list_column_catalog(
         dataset_id: Annotated[str, Query(alias="datasetId")],
-        service: ColumnPreferenceService = Depends(get_preference_service),
+        service: Annotated[ColumnPreferenceService, Depends(get_preference_service)] = Depends(
+            get_preference_service
+        ),
     ) -> ColumnCatalogResponse:
         catalog = service.fetch_catalog(dataset_id)
         columns = [
@@ -371,8 +396,10 @@ def create_app(
     )
     def load_column_preference(
         dataset_id: Annotated[str, Query(alias="datasetId")],
+        service: Annotated[ColumnPreferenceService, Depends(get_preference_service)] = Depends(
+            get_preference_service
+        ),
         user_id: Annotated[str | None, Query(alias="userId")] = None,
-        service: ColumnPreferenceService = Depends(get_preference_service),
     ) -> ColumnPreferenceResponse:
         snapshot = service.load_preference(dataset_id=dataset_id, user_id=user_id)
         if snapshot is None:
@@ -386,7 +413,9 @@ def create_app(
     )
     def save_column_preference(
         payload: UpdateColumnPreferenceRequest,
-        service: ColumnPreferenceService = Depends(get_preference_service),
+        service: Annotated[ColumnPreferenceService, Depends(get_preference_service)] = Depends(
+            get_preference_service
+        ),
     ) -> ColumnPreferenceResponse:
         snapshot = _snapshot_from_request(payload)
         try:
@@ -398,8 +427,10 @@ def create_app(
     @app.delete("/preferences/columns", status_code=status.HTTP_204_NO_CONTENT)
     def delete_column_preference(
         dataset_id: Annotated[str, Query(alias="datasetId")],
+        service: Annotated[ColumnPreferenceService, Depends(get_preference_service)] = Depends(
+            get_preference_service
+        ),
         user_id: Annotated[str | None, Query(alias="userId")] = None,
-        service: ColumnPreferenceService = Depends(get_preference_service),
     ) -> Response:
         service.reset_preference(dataset_id, user_id=user_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -412,7 +443,9 @@ def create_app(
     )
     def mirror_preferences(
         payload: PreferenceMirrorRequest,
-        service: ColumnPreferenceService = Depends(get_preference_service),
+        service: Annotated[ColumnPreferenceService, Depends(get_preference_service)] = Depends(
+            get_preference_service
+        ),
     ) -> PreferenceMirrorResponse:
         snapshot = _snapshot_from_mirror(payload)
         mirrored = service.mirror_preference(snapshot)
@@ -425,8 +458,10 @@ def create_app(
     )
     def load_mirrored_preference(
         dataset_id: Annotated[str, Query(alias="datasetId")],
+        service: Annotated[ColumnPreferenceService, Depends(get_preference_service)] = Depends(
+            get_preference_service
+        ),
         device_id: Annotated[str | None, Query(alias="deviceId")] = None,
-        service: ColumnPreferenceService = Depends(get_preference_service),
     ) -> PreferenceMirrorResponse | Response:
         snapshot = service.load_mirrored_preference(dataset_id=dataset_id, device_id=device_id)
         if snapshot is None:
@@ -447,7 +482,11 @@ def create_app(
                 raise QueryValidationError("sheetId is required for each sheet.")
 
             alias_raw = entry.get("alias")
-            alias = alias_raw.strip() if isinstance(alias_raw, str) and alias_raw.strip() else f"sheet_{index + 1}"
+            alias = (
+                alias_raw.strip()
+                if isinstance(alias_raw, str) and alias_raw.strip()
+                else f"sheet_{index + 1}"
+            )
 
             role_raw = entry.get("role", QuerySheetRole.PRIMARY.value)
             if not isinstance(role_raw, str):
@@ -466,7 +505,7 @@ def create_app(
             for raw_key in join_keys_raw:
                 if isinstance(raw_key, str):
                     key_value = raw_key.strip()
-                elif isinstance(raw_key, (int, float)):
+                elif isinstance(raw_key, int | float):
                     key_value = str(raw_key)
                 else:
                     raise QueryValidationError("joinKeys must contain only strings or numbers.")
@@ -541,19 +580,23 @@ def create_app(
             limit=limit_value,
         )
 
-    def get_analytics_service(repo: MetadataRepository = Depends(get_repository)):
+    def get_analytics_service(
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository)
+    ) -> AnalyticsService:
         return AnalyticsService(metadata_repository=repo)
 
     @app.post("/api/source-bundles/import", status_code=status.HTTP_201_CREATED)
     async def import_source_bundle(
-        file: UploadFile = File(...),
-        displayName: str = Form(...),
-        selectedColumns: str | None = Form(default=None),
-        hiddenSheetPolicy: str | None = Form(default=None),
-        delimiter: str | None = Form(default=None),
-        allowDuplicateImport: bool = Form(default=False),
-        ingestion_service: IngestionService = Depends(get_ingestion_service),
-    ):
+        file: Annotated[UploadFile, File(...)],
+        displayName: Annotated[str, Form(...)],
+        ingestion_service: Annotated[IngestionService, Depends(get_ingestion_service)] = Depends(
+            get_ingestion_service
+        ),
+        selectedColumns: Annotated[str | None, Form()] = None,
+        hiddenSheetPolicy: Annotated[str | None, Form()] = None,
+        delimiter: Annotated[str | None, Form()] = None,
+        allowDuplicateImport: Annotated[bool, Form()] = False,
+    ) -> dict[str, object]:
         columns = _parse_selected_columns(selectedColumns)
         if not columns:
             raise HTTPException(status_code=400, detail="selectedColumns are required.")
@@ -584,7 +627,10 @@ def create_app(
         return bundle_payload
 
     @app.get("/api/source-bundles/{bundle_id}/sheets")
-    def list_bundle_sheets(bundle_id: str, repo: MetadataRepository = Depends(get_repository)):
+    def list_bundle_sheets(
+        bundle_id: str,
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository),
+    ) -> dict[str, object]:
         bundle = repo.get_source_bundle(bundle_id)
         if bundle is None:
             raise HTTPException(status_code=404, detail="Source bundle not found.")
@@ -598,14 +644,23 @@ def create_app(
     def refresh_bundle_endpoint(
         bundle_id: str,
         payload: dict[str, object],
-        ingestion_service: IngestionService = Depends(get_ingestion_service),
-    ):
+        ingestion_service: Annotated[IngestionService, Depends(get_ingestion_service)] = Depends(
+            get_ingestion_service
+        ),
+    ) -> dict[str, object]:
         allow_hidden = payload.get("allowHiddenSheets")
-        if not isinstance(allow_hidden, list) or not all(isinstance(item, str) for item in allow_hidden):
-            raise HTTPException(status_code=422, detail="allowHiddenSheets must be an array of strings.")
+        if not isinstance(allow_hidden, list) or not all(
+            isinstance(item, str) for item in allow_hidden
+        ):
+            raise HTTPException(
+                status_code=422, detail="allowHiddenSheets must be an array of strings."
+            )
 
         rename_tolerance = payload.get("renameTolerance", "allow_same_schema")
-        if not isinstance(rename_tolerance, str) or rename_tolerance not in {"allow_same_schema", "strict"}:
+        if not isinstance(rename_tolerance, str) or rename_tolerance not in {
+            "allow_same_schema",
+            "strict",
+        }:
             raise HTTPException(
                 status_code=422,
                 detail="renameTolerance must be 'allow_same_schema' or 'strict'.",
@@ -631,8 +686,10 @@ def create_app(
     @app.post("/api/queries/preview")
     def preview_query_endpoint(
         payload: dict[str, object],
-        query_service: QueryBuilderService = Depends(get_query_builder_service),
-    ):
+        query_service: Annotated[QueryBuilderService, Depends(get_query_builder_service)] = Depends(
+            get_query_builder_service
+        ),
+    ) -> dict[str, object]:
         try:
             request = _parse_preview_request(payload)
         except QueryValidationError as exc:
@@ -659,8 +716,8 @@ def create_app(
     def update_sheet_source_endpoint(
         sheet_id: str,
         payload: dict[str, object],
-        repo: MetadataRepository = Depends(get_repository),
-    ):
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository),
+    ) -> dict[str, object]:
         sheet = repo.get_sheet_source(sheet_id)
         if sheet is None:
             raise HTTPException(status_code=404, detail="Sheet source not found.")
@@ -677,24 +734,32 @@ def create_app(
             try:
                 status_enum = SheetStatus(status_value)
             except ValueError as error:
-                raise HTTPException(status_code=422, detail=f"Invalid sheet status '{status_value}'.") from error
+                raise HTTPException(
+                    status_code=422, detail=f"Invalid sheet status '{status_value}'."
+                ) from error
 
         tags_value = payload.get("tags")
         if tags_value is not None:
-            if not isinstance(tags_value, list) or not all(isinstance(tag, str) for tag in tags_value):
+            if not isinstance(tags_value, list) or not all(
+                isinstance(tag, str) for tag in tags_value
+            ):
                 raise HTTPException(status_code=422, detail="tags must be an array of strings.")
 
         repo.update_sheet_source(
             sheet,
             status=status_enum,
             description=description if isinstance(description, str) else None,
-            tags=[tag for tag in tags_value or [] if tag.strip()] if tags_value is not None else None,
+            tags=(
+                [tag for tag in tags_value or [] if tag.strip()] if tags_value is not None else None
+            ),
         )
 
         return _serialize_sheet(sheet)
 
     @app.get("/datasets")
-    def list_datasets(repo: MetadataRepository = Depends(get_repository)):
+    def list_datasets(
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository),
+    ) -> dict[str, list[dict[str, object]]]:
         datasets = repo.list_data_files()
         return {
             "datasets": [
@@ -711,13 +776,15 @@ def create_app(
 
     @app.post("/datasets/import", status_code=status.HTTP_202_ACCEPTED)
     async def import_dataset(
-        upload: UploadFile = File(...),
-        display_name: str = Form(...),
-        selected_columns: list[str] = Form(...),
-        delimiter: str | None = Form(default=None),
-        sheet_name: str | None = Form(default=None),
-        ingestion_service: IngestionService = Depends(get_ingestion_service),
-    ):
+        upload: Annotated[UploadFile, File(...)],
+        display_name: Annotated[str, Form(...)],
+        selected_columns: Annotated[list[str], Form(...)],
+        ingestion_service: Annotated[IngestionService, Depends(get_ingestion_service)] = Depends(
+            get_ingestion_service
+        ),
+        delimiter: Annotated[str | None, Form()] = None,
+        sheet_name: Annotated[str | None, Form()] = None,
+    ) -> dict[str, object]:
         columns = [column for column in selected_columns if column]
         if not columns:
             raise HTTPException(status_code=400, detail="selected_columns are required.")
@@ -753,8 +820,8 @@ def create_app(
     @app.get("/datasets/{dataset_id}/audits/latest")
     def latest_audit(
         dataset_id: str,
-        repo: MetadataRepository = Depends(get_repository),
-    ):
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository),
+    ) -> dict[str, object]:
         audit = repo.get_latest_audit(dataset_id)
         if audit is None:
             raise HTTPException(status_code=404, detail="Audit not found")
@@ -774,12 +841,12 @@ def create_app(
     )
     def list_dataset_column_catalog(
         dataset_id: str,
+        repo: Annotated[MetadataRepository, Depends(get_repository)] = Depends(get_repository),
         include_unavailable: bool = Query(
             default=False,
             alias="includeUnavailable",
             description="Include columns marked missing/unavailable",
         ),
-        repo: MetadataRepository = Depends(get_repository),
     ) -> AggregatedColumnCatalogResponse:
         bundle = repo.get_source_bundle(dataset_id)
         if bundle is None:
@@ -792,7 +859,9 @@ def create_app(
                 column_name=entry.column_name,
                 display_label=entry.display_label,
                 availability=entry.availability,
-                sheet_provenance=list(entry.sheet_labels) if entry.sheet_labels else list(entry.sheet_ids),
+                sheet_provenance=(
+                    list(entry.sheet_labels) if entry.sheet_labels else list(entry.sheet_ids)
+                ),
                 data_type=entry.data_type,
                 last_seen_at=entry.last_seen_at,
             )
@@ -802,6 +871,9 @@ def create_app(
 
     @app.get("/search")
     def search_queries(
+        search_service: Annotated[SearchService, Depends(get_search_service)] = Depends(
+            get_search_service
+        ),
         q: str = Query(..., description="Natural language search query"),
         dataset_ids: str | None = Query(
             default=None,
@@ -837,30 +909,57 @@ def create_app(
             description="Minimum similarity threshold (0-1, legacy)",
             alias="min_similarity",
         ),
-        limit: int = Query(default=20, ge=1, le=100, description="Maximum results to return"),
-        search_service: SearchService = Depends(get_search_service),
-    ):
+        limit_per_mode: int | None = Query(
+            default=10,
+            ge=1,
+            le=50,
+            description="Maximum results per mode (semantic and lexical paginate independently)",
+            alias="limitPerMode",
+        ),
+        offset_semantic: int = Query(
+            default=0,
+            ge=0,
+            description="Offset for semantic results pagination",
+            alias="offsetSemantic",
+        ),
+        offset_lexical: int = Query(
+            default=0,
+            ge=0,
+            description="Offset for lexical results pagination",
+            alias="offsetLexical",
+        ),
+    ) -> dict[str, object]:
         dataset_filters = _split_csv(dataset_ids or dataset_ids_legacy) or None
         column_filters = _split_csv(column_names or column_names_legacy) or None
-        similarity_threshold = min_similarity if min_similarity is not None else (min_similarity_percent / 100.0)
+        similarity_threshold = (
+            min_similarity if min_similarity is not None else (min_similarity_percent / 100.0)
+        )
         start = time.perf_counter()
-        results = search_service.search(
+        response = search_service.search_dual(
             query=q,
             dataset_ids=dataset_filters,
             column_names=column_filters,
             min_similarity=similarity_threshold,
-            limit=limit,
+            limit_per_mode=limit_per_mode,
+            offset_semantic=offset_semantic,
+            offset_lexical=offset_lexical,
         )
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         legend = build_similarity_legend()
-        dataset_scope = dataset_filters or sorted({result.dataset_id for result in results})
-        contextual_defaults = build_contextual_defaults(search_service.metadata_repository, dataset_scope)
+        semantic_results = response["semantic_results"]
+        lexical_results = response["lexical_results"]
+        dataset_scope = dataset_filters or sorted(
+            {result.dataset_id for result in semantic_results + lexical_results}
+        )
+        contextual_defaults = build_contextual_defaults(
+            search_service.metadata_repository, dataset_scope
+        )
         try:
             client = AnalyticsClient()
             contextual_labels = sorted(
                 {
                     label
-                    for result in results
+                    for result in lexical_results + semantic_results
                     for label in result.metadata.get("contextual_labels", {}).values()
                 }
             )
@@ -868,23 +967,35 @@ def create_app(
             dataset_hint = dataset_filters[0] if dataset_filters else None
             client.search_latency(elapsed_ms, dataset_id=dataset_hint, detail=detail)
             client.flush()
-        except Exception:
-            pass
+        except Exception as error:
+            LOGGER.warning("Failed to record search latency: %s", error, exc_info=True)
+
+        fallback = response.get("fallback") or {"semantic_available": True, "message": None}
+        if fallback.get("message") is None and not fallback.get("semantic_available", True):
+            fallback["message"] = "Semantic results unavailable"
+
+        combined_results = semantic_results + lexical_results
 
         return {
             "legend": legend,
             "contextual_defaults": contextual_defaults,
-            "results": [result.to_dict() for result in results],
+            "semantic_results": [result.to_dict() for result in semantic_results],
+            "lexical_results": [result.to_dict() for result in lexical_results],
+            "results": [result.to_dict() for result in combined_results],
+            "pagination": response["pagination"],
+            "fallback": fallback,
         }
 
     @app.get("/analytics/clusters")
     def analytics_clusters(
+        analytics_service: Annotated[AnalyticsService, Depends(get_analytics_service)] = Depends(
+            get_analytics_service
+        ),
         dataset_ids: str | None = Query(
             default=None,
             description="Comma-separated dataset IDs to scope analytics",
         ),
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
-    ):
+    ) -> dict[str, object]:
         dataset_filters = _split_csv(dataset_ids) or None
         clusters = analytics_service.list_clusters(dataset_filters)
         if not clusters:
@@ -893,12 +1004,14 @@ def create_app(
 
     @app.get("/analytics/summary")
     def analytics_summary(
+        analytics_service: Annotated[AnalyticsService, Depends(get_analytics_service)] = Depends(
+            get_analytics_service
+        ),
         dataset_ids: str | None = Query(
             default=None,
             description="Comma-separated dataset IDs to scope analytics",
         ),
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
-    ):
+    ) -> dict[str, object]:
         dataset_filters = _split_csv(dataset_ids) or None
         summary = analytics_service.summarize_coverage(dataset_filters)
         return summary.to_dict()

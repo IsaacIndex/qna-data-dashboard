@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.router import create_app
-from app.db.metadata import MetadataRepository, create_session_factory, session_scope, build_engine
+from app.db.metadata import MetadataRepository, build_engine, create_session_factory, session_scope
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
 
 
@@ -82,7 +82,7 @@ def _inject_unavailable_column(dataset_id: str, column_name: str) -> None:
         repo.update_sheet_source(
             target,
             column_schema=schema,
-            last_refreshed_at=datetime.now(timezone.utc),
+            last_refreshed_at=datetime.now(UTC),
         )
 
 

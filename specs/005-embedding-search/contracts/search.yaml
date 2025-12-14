@@ -45,6 +45,22 @@ paths:
             maximum: 50
             default: 10
           description: Maximum results per mode (semantic and lexical lists paginate independently).
+        - in: query
+          name: offsetSemantic
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Offset for semantic results pagination.
+        - in: query
+          name: offsetLexical
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Offset for lexical results pagination.
       responses:
         "200":
           description: Dual-mode search results.

@@ -3,24 +3,40 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
-DEFAULT_CHROMA_DIR = "data/chromadb"
-USE_REAL_CHROMA = os.getenv("QNA_USE_CHROMADB", "0") == "1"
+from app.utils.config import (
+    CHROMA_DB_ENV,
+    CHROMA_PERSIST_ENV,
+    DEFAULT_DATA_ROOT,
+    DEFAULT_EMBEDDINGS_SUBDIR,
+)
+from app.utils.logging import get_logger
+
+try:  # pragma: no cover - optional dependency for production persistence
+    import chromadb
+except ImportError:  # pragma: no cover
+    chromadb = None
+
+LOGGER = get_logger(__name__)
+
+DEFAULT_CHROMA_DIR = str(DEFAULT_DATA_ROOT / DEFAULT_EMBEDDINGS_SUBDIR)
+CHROMA_MODE = os.getenv("QNA_USE_CHROMADB", "0").lower()
+PREFER_REAL_CHROMA = CHROMA_MODE in {"1", "true", "yes", "on", "persist"}
 
 
 class InMemoryCollection:
     def __init__(self, name: str, metadata: dict[str, Any] | None = None) -> None:
         self.name = name
         self.metadata = metadata or {}
-        self._documents: Dict[str, str] = {}
-        self._embeddings: Dict[str, List[float]] = {}
+        self._documents: dict[str, str] = {}
+        self._embeddings: dict[str, list[float]] = {}
 
-    def add(self, ids: List[str], documents: List[str], embeddings: List[List[float]]) -> None:
+    def add(self, ids: list[str], documents: list[str], embeddings: list[list[float]]) -> None:
         self.upsert(ids=ids, documents=documents, embeddings=embeddings)
 
-    def upsert(self, ids: List[str], documents: List[str], embeddings: List[List[float]]) -> None:
-        for idx, doc, vector in zip(ids, documents, embeddings):
+    def upsert(self, ids: list[str], documents: list[str], embeddings: list[list[float]]) -> None:
+        for idx, doc, vector in zip(ids, documents, embeddings, strict=False):
             self._documents[idx] = doc
             self._embeddings[idx] = list(vector)
 
@@ -34,9 +50,11 @@ class InMemoryCollection:
 
 class InMemoryChromaClient:
     def __init__(self) -> None:
-        self._collections: Dict[str, InMemoryCollection] = {}
+        self._collections: dict[str, InMemoryCollection] = {}
 
-    def get_or_create_collection(self, name: str, metadata: dict[str, Any] | None = None) -> InMemoryCollection:
+    def get_or_create_collection(
+        self, name: str, metadata: dict[str, Any] | None = None
+    ) -> InMemoryCollection:
         if name not in self._collections:
             self._collections[name] = InMemoryCollection(name, metadata)
         return self._collections[name]
@@ -48,18 +66,31 @@ class InMemoryChromaClient:
 
 
 def _resolve_persist_directory(persist_directory: str | None = None) -> Path:
-    base = Path(persist_directory or os.getenv("CHROMA_DB_DIR", DEFAULT_CHROMA_DIR))
+    base_env = os.getenv(CHROMA_PERSIST_ENV) or os.getenv(CHROMA_DB_ENV)
+    base_value = persist_directory or base_env or DEFAULT_CHROMA_DIR
+    base = Path(base_value)
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 
+def _build_real_chroma_client(persist_directory: Path) -> object:  # pragma: no cover - slow path
+    if chromadb is None:
+        raise RuntimeError("chromadb package is not installed")
+    # PersistentClient handles local on-disk storage; fallback to in-memory on failure.
+    return chromadb.PersistentClient(path=str(persist_directory))
+
+
 @lru_cache(maxsize=1)
-def get_chroma_client(persist_directory: str | None = None):  # type: ignore[override]
-    if USE_REAL_CHROMA:
-        raise RuntimeError(
-            "Real ChromaDB client not available in this environment. Set QNA_USE_CHROMADB=0 to use in-memory store."
-        )
-    _resolve_persist_directory(persist_directory)
+def get_chroma_client(persist_directory: str | None = None) -> object:  # type: ignore[override]
+    base = _resolve_persist_directory(persist_directory)
+    if PREFER_REAL_CHROMA:
+        try:
+            return _build_real_chroma_client(base)
+        except Exception as error:  # pragma: no cover - log and fall back
+            LOGGER.warning(
+                "Failed to initialize persistent ChromaDB client: %s. Falling back to in-memory.",
+                error,
+            )
     return InMemoryChromaClient()
 
 
@@ -68,6 +99,6 @@ def get_or_create_collection(
     *,
     metadata: dict[str, Any] | None = None,
     persist_directory: str | None = None,
-):
+) -> object:
     client = get_chroma_client(persist_directory=persist_directory)
     return client.get_or_create_collection(name=name, metadata=metadata or {})

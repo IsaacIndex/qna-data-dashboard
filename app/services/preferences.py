@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import ColumnPreference, PreferenceMirror
@@ -95,7 +96,7 @@ def persist_column_selection(
     state = ensure_session_defaults(store)
     state["selected_columns"] = list(selected_columns)
     state["active_tab"] = active_tab
-    state["last_saved_at"] = datetime.now(timezone.utc)
+    state["last_saved_at"] = datetime.now(UTC)
     state["preference_status"] = "ready"
     log_event(
         get_logger(__name__),
@@ -125,7 +126,7 @@ def hydrate_local_preferences(
     device_id = None
     version = 0
     source = "defaults"
-    updated_at = datetime.now(timezone.utc)
+    updated_at = datetime.now(UTC)
     default_selection = [name for name in defaults or [] if name]
 
     selected_columns: list[SelectedColumn] = [
@@ -155,7 +156,7 @@ def hydrate_local_preferences(
             try:
                 updated_at = datetime.fromisoformat(updated_raw.replace("Z", "+00:00"))
             except ValueError:
-                updated_at = datetime.now(timezone.utc)
+                updated_at = datetime.now(UTC)
 
         entries = payload.get("selectedColumns") or payload.get("selected_columns") or []
         try:
@@ -201,7 +202,7 @@ def hydrate_local_preferences(
 class ColumnPreferenceService:
     """Orchestrates catalog lookups and persistence for column preferences."""
 
-    def __init__(self, metadata_repository: MetadataRepository):
+    def __init__(self, metadata_repository: MetadataRepository) -> None:
         self.metadata_repository = metadata_repository
         self._cache: dict[tuple[str, str | None], PreferenceSnapshot] = {}
         self._logger = get_logger(__name__)
@@ -221,7 +222,9 @@ class ColumnPreferenceService:
             )
         return entries
 
-    def load_preference(self, dataset_id: str, user_id: str | None = None) -> PreferenceSnapshot | None:
+    def load_preference(
+        self, dataset_id: str, user_id: str | None = None
+    ) -> PreferenceSnapshot | None:
         cache_key = self._cache_key(dataset_id, user_id)
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -269,7 +272,9 @@ class ColumnPreferenceService:
             user_id=user_id or "system",
         )
 
-    def load_mirrored_preference(self, dataset_id: str, device_id: str | None = None) -> PreferenceSnapshot | None:
+    def load_mirrored_preference(
+        self, dataset_id: str, device_id: str | None = None
+    ) -> PreferenceSnapshot | None:
         cache_key = self._cache_key(dataset_id, device_id)
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -312,7 +317,7 @@ class ColumnPreferenceService:
                 user_id=snapshot.user_id,
                 selected_columns=fallback_columns,
                 max_columns=max(snapshot.max_columns, len(fallback_columns), 1),
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
                 version=snapshot.version,
                 source=snapshot.source or "mirror",
             )
@@ -399,7 +404,9 @@ class ColumnPreferenceService:
             unknown = sorted({name for name, *_ in sanitized if name not in allowed_columns})
             if unknown:
                 unknown_list = ", ".join(unknown)
-                raise ValueError(f"Unknown columns for dataset {snapshot.dataset_id}: {unknown_list}.")
+                raise ValueError(
+                    f"Unknown columns for dataset {snapshot.dataset_id}: {unknown_list}."
+                )
 
         ordered: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -416,8 +423,6 @@ class ColumnPreferenceService:
             )
 
         if len(ordered) > max_columns:
-            raise ValueError(
-                f"Selection exceeds the maximum allowed columns ({max_columns})."
-            )
+            raise ValueError(f"Selection exceeds the maximum allowed columns ({max_columns}).")
 
         return ordered, allowed_columns

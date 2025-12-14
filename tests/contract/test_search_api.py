@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,7 +26,9 @@ class ApiEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{idx}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records), model_name="stub-model", model_dimension=1
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]
@@ -44,30 +46,30 @@ def client(
     return TestClient(app)
 
 
-def _csv_bytes() -> bytes:
+def _csv_bytes(suffix: str = "") -> bytes:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=["question", "response"])
     writer.writeheader()
     writer.writerow(
         {
-            "question": "How to reset password?",
-            "response": "Use account recovery flow.",
+            "question": f"How to reset password?{suffix}",
+            "response": f"Use account recovery flow.{suffix}",
         }
     )
     writer.writerow(
         {
-            "question": "Where can I download invoices?",
-            "response": "Invoices live on the billing portal.",
+            "question": f"Where can I download invoices?{suffix}",
+            "response": f"Invoices live on the billing portal.{suffix}",
         }
     )
     return buffer.getvalue().encode("utf-8")
 
 
-def _ingest_dataset(client: TestClient, display_name: str) -> str:
+def _ingest_dataset(client: TestClient, display_name: str, *, suffix: str = "") -> str:
     response = client.post(
         "/datasets/import",
         files=[
-            ("upload", ("faq.csv", _csv_bytes(), "text/csv")),
+            ("upload", ("faq.csv", _csv_bytes(suffix), "text/csv")),
             ("display_name", (None, display_name)),
             ("selected_columns", (None, "question")),
             ("selected_columns", (None, "response")),
@@ -80,23 +82,32 @@ def _ingest_dataset(client: TestClient, display_name: str) -> str:
 def test_search_returns_ranked_results(client: TestClient) -> None:
     dataset_id = _ingest_dataset(client, "FAQ Dataset")
 
-    response = client.get("/search", params={"q": "reset password"})
+    response = client.get("/search", params={"q": "reset password", "limitPerMode": 2})
     assert response.status_code == 200
     payload = response.json()
-    assert "results" in payload
-    assert payload["results"], "Expected at least one search result"
+    semantic = payload["semantic_results"]
+    lexical = payload["lexical_results"]
+    assert semantic, "Expected semantic results"
+    assert lexical, "Expected lexical results"
 
-    first = payload["results"][0]
-    assert first["dataset_id"] == dataset_id
-    assert first["record_id"]
-    assert first["column_name"] in {"question", "response"}
-    assert first["similarity"] >= 0.0
-    assert first["text"]
+    assert len(semantic) <= 2
+    assert len(lexical) <= 2
+    for entry in semantic + lexical:
+        assert entry["dataset_id"] == dataset_id
+        assert entry["record_id"]
+        assert entry["column_name"] in {"question", "response"}
+        assert entry["similarity"] >= 0.0
+        assert entry["text"]
+        assert entry["mode"] in {"semantic", "lexical"}
+
+    pagination = payload["pagination"]
+    assert pagination["semantic"]["limit"] == 2
+    assert pagination["lexical"]["limit"] == 2
 
 
 def test_search_honors_filters(client: TestClient) -> None:
     dataset_a = _ingest_dataset(client, "FAQ Dataset A")
-    dataset_b = _ingest_dataset(client, "FAQ Dataset B")
+    dataset_b = _ingest_dataset(client, "FAQ Dataset B", suffix="B")
 
     filtered = client.get(
         "/search",
@@ -104,13 +115,14 @@ def test_search_honors_filters(client: TestClient) -> None:
             "q": "reset password",
             "dataset_ids": dataset_a,
             "column_names": "question",
+            "limitPerMode": 5,
         },
     )
     assert filtered.status_code == 200
-    results = filtered.json()["results"]
-    assert results, "Expected filtered results"
-    assert all(result["dataset_id"] == dataset_a for result in results)
-    assert all(result["column_name"] == "question" for result in results)
+    body = filtered.json()
+    for result in body["semantic_results"] + body["lexical_results"]:
+        assert result["dataset_id"] == dataset_a
+        assert result["column_name"] == "question"
 
     high_threshold = client.get(
         "/search",
@@ -118,7 +130,9 @@ def test_search_honors_filters(client: TestClient) -> None:
             "q": "reset password",
             "dataset_ids": dataset_b,
             "min_similarity": 0.99,
+            "limitPerMode": 5,
         },
     )
     assert high_threshold.status_code == 200
-    assert high_threshold.json()["results"] == []
+    assert high_threshold.json()["semantic_results"] == []
+    assert high_threshold.json()["lexical_results"] == []

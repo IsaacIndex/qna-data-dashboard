@@ -5,10 +5,11 @@ import hashlib
 import json
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Optional, Sequence
+from typing import Literal
 
 try:  # Optional dependency for Excel ingestion
     from openpyxl import load_workbook
@@ -65,7 +66,7 @@ class HiddenSheetPolicy:
 class BundleIngestionOptions:
     selected_columns: Sequence[str]
     hidden_sheet_policy: HiddenSheetPolicy
-    delimiter: Optional[str] = None
+    delimiter: str | None = None
     encoding: str = "utf-8"
     allow_duplicate_import: bool = False
 
@@ -205,7 +206,9 @@ def build_column_picker_options(
     """Prepare a UI-friendly representation of catalog entries with sheet chips."""
     options: list[dict[str, object]] = []
     for entry in catalog:
-        sheet_chips = sorted(set(entry.sheet_labels)) if entry.sheet_labels else sorted(entry.sheet_ids)
+        sheet_chips = (
+            sorted(set(entry.sheet_labels)) if entry.sheet_labels else sorted(entry.sheet_ids)
+        )
         options.append(
             {
                 "column_name": entry.column_name,
@@ -222,8 +225,8 @@ def build_column_picker_options(
 @dataclass
 class IngestionOptions:
     selected_columns: Sequence[str]
-    delimiter: Optional[str] = None
-    sheet_name: Optional[str] = None
+    delimiter: str | None = None
+    sheet_name: str | None = None
     encoding: str = "utf-8"
     allow_duplicate_import: bool = False
 
@@ -311,7 +314,7 @@ class IngestionService:
         if not source_path.exists():
             raise FileNotFoundError(f"Source file does not exist: {source_path}")
 
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
         timer = time.perf_counter()
 
         file_hash = self._hash_file(source_path)
@@ -350,7 +353,7 @@ class IngestionService:
             )
             if not available_columns:
                 raise ValueError(
-                    "Selected columns not found in source; ingestion requires at least one matching column."
+                    "Selected columns not found in source; provide at least one matching column."
                 )
 
             data_file.selected_columns = list(available_columns)
@@ -378,7 +381,7 @@ class IngestionService:
                 status=IngestionStatus.READY,
                 row_count=processed_rows,
                 error_summary=None,
-                processed_at=datetime.now(timezone.utc),
+                processed_at=datetime.now(UTC),
             )
 
             elapsed_ms = (time.perf_counter() - timer) * 1000.0
@@ -390,7 +393,7 @@ class IngestionService:
                 processed_rows=processed_rows,
                 skipped_rows=skipped_rows,
                 started_at=start_time,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
             )
 
             self.metadata_repository.record_performance_metric(
@@ -424,7 +427,7 @@ class IngestionService:
                 processed_rows=0,
                 skipped_rows=0,
                 started_at=start_time,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
             )
             self.metadata_repository.session.commit()  # type: ignore[attr-defined]
             raise
@@ -441,7 +444,7 @@ class IngestionService:
         if not source_path.exists():
             raise FileNotFoundError(f"Source file does not exist: {source_path}")
 
-        ingestion_started = datetime.now(timezone.utc)
+        ingestion_started = datetime.now(UTC)
         file_hash = self._hash_file(source_path)
         existing_bundle = self.metadata_repository.get_source_bundle_by_hash(file_hash)
         if existing_bundle and not options.allow_duplicate_import:
@@ -474,7 +477,9 @@ class IngestionService:
             discovered, options.hidden_sheet_policy
         )
         if not included:
-            raise ValueError("No sheets available for ingestion after applying hidden sheet policy.")
+            raise ValueError(
+                "No sheets available for ingestion after applying hidden sheet policy."
+            )
 
         sheet_results: list[SheetIngestionResult] = []
         inactive_sheets = 0
@@ -482,10 +487,12 @@ class IngestionService:
         try:
             for sheet in included:
                 sheet_timer = time.perf_counter()
-                sheet_started = datetime.now(timezone.utc)
+                sheet_started = datetime.now(UTC)
                 sheet_name = "__csv__" if file_type == FileType.CSV else sheet.name
                 visibility_state = (
-                    SheetVisibilityState.HIDDEN_OPT_IN if sheet.hidden else SheetVisibilityState.VISIBLE
+                    SheetVisibilityState.HIDDEN_OPT_IN
+                    if sheet.hidden
+                    else SheetVisibilityState.VISIBLE
                 )
                 position_index = sheet.position
                 display_label = (
@@ -521,7 +528,7 @@ class IngestionService:
                         row_count=0,
                         column_schema=[],
                         checksum=None,
-                        last_refreshed_at=datetime.now(timezone.utc),
+                        last_refreshed_at=datetime.now(UTC),
                         position_index=position_index,
                     )
                     inactive_sheets += 1
@@ -559,7 +566,7 @@ class IngestionService:
                         "Sheet '%s' missing all selected columns; marking inactive and continuing.",
                         sheet_name,
                     )
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     self.metadata_repository.update_data_file_status(
                         data_file,
                         status=IngestionStatus.FAILED,
@@ -608,7 +615,7 @@ class IngestionService:
                     )
                 )
 
-                completed_at = datetime.now(timezone.utc)
+                completed_at = datetime.now(UTC)
                 self.metadata_repository.update_data_file_status(
                     data_file,
                     status=IngestionStatus.READY,
@@ -669,7 +676,7 @@ class IngestionService:
                 bundle=bundle,
                 status=AuditStatus.SUCCEEDED,
                 started_at=ingestion_started,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
                 sheet_summary=summary,
                 hidden_sheets_enabled=[sheet.name for sheet in hidden_opt_ins],
             )
@@ -692,7 +699,7 @@ class IngestionService:
                 bundle=bundle,
                 status=AuditStatus.FAILED,
                 started_at=ingestion_started,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
                 sheet_summary=None,
                 hidden_sheets_enabled=[sheet.name for sheet in hidden_opt_ins],
             )
@@ -711,7 +718,7 @@ class IngestionService:
         if bundle is None:
             raise ValueError(f"Source bundle '{bundle_id}' not found.")
 
-        ingestion_started = datetime.now(timezone.utc)
+        ingestion_started = datetime.now(UTC)
 
         if source_path is not None:
             stored_path = self._copy_bundle_file(source_path, bundle)
@@ -729,7 +736,9 @@ class IngestionService:
         else:
             discovered_sheets = [DiscoveredSheet(name="__csv__", position=0, hidden=False)]
 
-        included, hidden_opt_ins, _excluded = apply_hidden_sheet_policy(discovered_sheets, hidden_sheet_policy)
+        included, hidden_opt_ins, _excluded = apply_hidden_sheet_policy(
+            discovered_sheets, hidden_sheet_policy
+        )
         if not included:
             raise ValueError("No sheets available after applying hidden sheet policy.")
 
@@ -813,7 +822,9 @@ class IngestionService:
                     sheet_model = self.metadata_repository.create_sheet_source(
                         bundle=bundle,
                         sheet_name=discovered_snapshot.sheet_name,
-                        display_label=self._build_display_label(bundle, file_type, discovered_snapshot.sheet_name),
+                        display_label=self._build_display_label(
+                            bundle, file_type, discovered_snapshot.sheet_name
+                        ),
                         visibility_state=visibility_state,
                         status=SheetStatus.ACTIVE,
                         row_count=0,
@@ -843,7 +854,7 @@ class IngestionService:
                             discovered_snapshot.sheet_name,
                             error,
                         )
-                        now = datetime.now(timezone.utc)
+                        now = datetime.now(UTC)
                         self.metadata_repository.update_sheet_source(
                             sheet_model,
                             status=SheetStatus.INACTIVE,
@@ -854,7 +865,9 @@ class IngestionService:
                             position_index=position_index,
                         )
                         data_file = self.metadata_repository.get_data_file_by_hash(
-                            self._hash_sheet_identifier(bundle.file_hash, discovered_snapshot.sheet_name)
+                            self._hash_sheet_identifier(
+                                bundle.file_hash, discovered_snapshot.sheet_name
+                            )
                         )
                         if data_file is not None:
                             self.metadata_repository.update_data_file_status(
@@ -886,7 +899,7 @@ class IngestionService:
                         row_count=0,
                         column_schema=[],
                         checksum=None,
-                        last_refreshed_at=datetime.now(timezone.utc),
+                        last_refreshed_at=datetime.now(UTC),
                         position_index=position_index,
                     )
                     deactivated_sheets.append(sheet_model)
@@ -913,7 +926,7 @@ class IngestionService:
                         discovered_snapshot.sheet_name,
                         error,
                     )
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     self.metadata_repository.update_sheet_source(
                         sheet_model,
                         status=SheetStatus.INACTIVE,
@@ -924,7 +937,9 @@ class IngestionService:
                         position_index=position_index,
                     )
                     data_file = self.metadata_repository.get_data_file_by_hash(
-                        self._hash_sheet_identifier(bundle.file_hash, discovered_snapshot.sheet_name)
+                        self._hash_sheet_identifier(
+                            bundle.file_hash, discovered_snapshot.sheet_name
+                        )
                     )
                     if data_file is not None:
                         self.metadata_repository.update_data_file_status(
@@ -951,11 +966,15 @@ class IngestionService:
                 self.metadata_repository.update_sheet_source(
                     sheet_model,
                     status=SheetStatus.INACTIVE,
-                    last_refreshed_at=datetime.now(timezone.utc),
+                    last_refreshed_at=datetime.now(UTC),
                 )
                 deactivated_sheets.append(sheet_model)
 
-            active_count = sum(1 for sheet in self.metadata_repository.list_sheet_sources(bundle_id=bundle.id) if sheet.status == SheetStatus.ACTIVE)
+            active_count = sum(
+                1
+                for sheet in self.metadata_repository.list_sheet_sources(bundle_id=bundle.id)
+                if sheet.status == SheetStatus.ACTIVE
+            )
             self.metadata_repository.update_source_bundle(
                 bundle,
                 ingestion_status=IngestionStatus.READY,
@@ -966,7 +985,7 @@ class IngestionService:
                 bundle=bundle,
                 status=AuditStatus.SUCCEEDED,
                 started_at=ingestion_started,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
                 sheet_summary={
                     "created": len(created_results),
                     "updated": len(updated_results),
@@ -994,7 +1013,7 @@ class IngestionService:
                 bundle=bundle,
                 status=AuditStatus.FAILED,
                 started_at=ingestion_started,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
                 sheet_summary=None,
                 hidden_sheets_enabled=[sheet.name for sheet in hidden_opt_ins],
             )
@@ -1025,7 +1044,7 @@ class IngestionService:
         visibility_state: SheetVisibilityState,
     ) -> SheetIngestionResult:
         sheet_timer = time.perf_counter()
-        sheet_started = datetime.now(timezone.utc)
+        sheet_started = datetime.now(UTC)
 
         self.metadata_repository.delete_query_records_for_sheet(sheet_model.id)
 
@@ -1079,7 +1098,7 @@ class IngestionService:
         data_file.selected_columns = list(available_columns)
         if missing_columns:
             LOGGER.warning(
-                "Refresh detected missing columns on sheet '%s'; continuing with available subset: %s",
+                "Refresh missing columns on sheet '%s'; continuing with available subset: %s",
                 sheet_name,
                 missing_columns,
             )
@@ -1097,7 +1116,7 @@ class IngestionService:
             )
         )
 
-        completed_at = datetime.now(timezone.utc)
+        completed_at = datetime.now(UTC)
         self.metadata_repository.update_data_file_status(
             data_file,
             status=IngestionStatus.READY,
@@ -1149,7 +1168,9 @@ class IngestionService:
             skipped_rows=skipped_rows,
         )
 
-    def _build_display_label(self, bundle: SourceBundle, file_type: FileType, sheet_name: str) -> str:
+    def _build_display_label(
+        self, bundle: SourceBundle, file_type: FileType, sheet_name: str
+    ) -> str:
         if file_type == FileType.CSV:
             return bundle.display_name
         return f"{bundle.display_name}:{sheet_name}"
@@ -1260,7 +1281,7 @@ class IngestionService:
         self.metadata_repository.session.flush()  # type: ignore[attr-defined]
         return records, skipped, available, missing
 
-    def _normalize_text(self, value: object) -> Optional[str]:
+    def _normalize_text(self, value: object) -> str | None:
         if value is None:
             return None
         text = str(value).strip()
@@ -1297,7 +1318,7 @@ class IngestionService:
         non_null = [value for value in values if value is not None]
         if not non_null:
             return "string"
-        if all(isinstance(value, (int, float)) for value in non_null):
+        if all(isinstance(value, int | float) for value in non_null):
             return "number"
         if all(isinstance(value, bool) for value in non_null):
             return "boolean"

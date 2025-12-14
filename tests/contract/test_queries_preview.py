@@ -108,7 +108,12 @@ def test_preview_cross_bundle_join(
     preview_payload = {
         "sheets": [
             {"sheetId": north_sheet_id, "alias": "sales", "role": "primary"},
-            {"sheetId": csv_sheet_id, "alias": "budget", "role": "join", "joinKeys": ["region", "category"]},
+            {
+                "sheetId": csv_sheet_id,
+                "alias": "budget",
+                "role": "join",
+                "joinKeys": ["region", "category"],
+            },
         ],
         "filters": [
             {"sheetAlias": "sales", "column": "region", "operator": "eq", "value": "north"},

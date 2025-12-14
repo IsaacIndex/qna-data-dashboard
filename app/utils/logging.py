@@ -5,9 +5,9 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Iterator, MutableMapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, MutableMapping, Sequence
 
 DEFAULT_LOG_LEVEL = os.getenv("QNA_LOG_LEVEL", "INFO")
 DEFAULT_LOG_DIR = Path(os.getenv("QNA_LOG_DIR", "data/logs"))
@@ -39,8 +39,8 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def _format_event(event: str, extra: MutableMapping[str, Any] | None = None) -> str:
-    payload: dict[str, Any] = {"event": event}
+def _format_event(event: str, extra: MutableMapping[str, object] | None = None) -> str:
+    payload: dict[str, object] = {"event": event}
     if extra:
         payload.update(extra)
     return json.dumps(payload, default=str)
@@ -48,7 +48,7 @@ def _format_event(event: str, extra: MutableMapping[str, Any] | None = None) -> 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        data: dict[str, Any] = {
+        data: dict[str, object] = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
             "logger": record.name,
             "severity": record.levelname,
@@ -105,7 +105,7 @@ class ConsoleFormatter(logging.Formatter):
         return output
 
 
-def log_event(logger: logging.Logger, event: str, **extra: Any) -> None:
+def log_event(logger: logging.Logger, event: str, **extra: object) -> None:
     logger.info(_format_event(event, extra))
 
 
@@ -132,7 +132,7 @@ def log_missing_columns(
 
 
 @contextmanager
-def log_timing(logger: logging.Logger, event: str, **extra: Any):
+def log_timing(logger: logging.Logger, event: str, **extra: object) -> Iterator[None]:
     """Context manager that logs start and completion with elapsed milliseconds."""
     start = time.perf_counter()
     logger.info(_format_event(event + ".start", extra))
@@ -155,7 +155,7 @@ class BufferedJsonlWriter:
         self.buffer_size = max(1, buffer_size)
         self._buffer: list[str] = []
 
-    def write(self, payload: MutableMapping[str, Any] | str) -> None:
+    def write(self, payload: MutableMapping[str, object] | str) -> None:
         line = payload if isinstance(payload, str) else json.dumps(payload, default=str)
         self._buffer.append(line.rstrip("\n"))
         if len(self._buffer) >= self.buffer_size:

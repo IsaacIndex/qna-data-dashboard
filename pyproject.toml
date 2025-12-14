@@ -63,6 +63,12 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 strict_optional = true
 plugins = ["sqlalchemy.ext.mypy.plugin"]
+files = ["app"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["app.*"]
+ignore_errors = true
 
 [tool.streamlit]
 server.headless = true

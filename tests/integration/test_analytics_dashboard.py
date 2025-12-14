@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,9 @@ class AnalyticsEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{idx}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records), model_name="stub-model", model_dimension=1
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]
@@ -34,8 +36,12 @@ def _write_csv(path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["question", "response"])
         writer.writeheader()
-        writer.writerow({"question": "Reset password workflow", "response": "Steps to reset passwords"})
-        writer.writerow({"question": "Download invoices", "response": "Download from billing portal"})
+        writer.writerow(
+            {"question": "Reset password workflow", "response": "Steps to reset passwords"}
+        )
+        writer.writerow(
+            {"question": "Download invoices", "response": "Download from billing portal"}
+        )
 
 
 def test_analytics_service_persists_clusters(

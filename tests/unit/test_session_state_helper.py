@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.utils.session_state import (
     confirm_reset,
@@ -33,7 +33,7 @@ def test_reset_requires_request_and_resets_when_confirmed() -> None:
     assert store["selected_columns"] == []
     assert store["filters"] == {}
     assert isinstance(store["last_reset_at"], datetime)
-    assert store["last_reset_at"].tzinfo == timezone.utc
+    assert store["last_reset_at"].tzinfo == UTC
 
 
 def test_update_session_state_sets_values() -> None:
