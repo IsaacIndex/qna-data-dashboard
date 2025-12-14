@@ -77,6 +77,7 @@ data/logs/
 data/bundles/
 *.db
 *.sqlite
+*.sqlite3
 
 # ------------------------
 # Platform / Stack specific

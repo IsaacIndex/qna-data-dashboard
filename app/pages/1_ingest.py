@@ -30,6 +30,10 @@ from app.db.metadata import (  # noqa: E402
     session_scope,
 )
 from app.db.schema import SheetStatus  # noqa: E402
+from app.services.chroma_client import (  # noqa: E402
+    get_chroma_client,
+    get_chroma_runtime_state,
+)
 from app.services.embeddings import EmbeddingService  # noqa: E402
 from app.services.ingestion import (  # noqa: E402
     BundleIngestionOptions,
@@ -69,6 +73,34 @@ def _get_session_factory() -> sessionmaker[Session]:
 
 def _data_root() -> Path:
     return get_data_root()
+
+
+def _render_persistence_status() -> None:
+    _ = get_chroma_client()
+    state = get_chroma_runtime_state()
+    persist_path = state.persist_directory.expanduser()
+    if state.is_persistent:
+        st.success(
+            f"Chroma persistence active — embeddings stored in `{persist_path}`.",
+            icon="💾",
+        )
+        return
+
+    if state.prefers_persistent:
+        reason = "persistent client unavailable"
+        if state.last_error:
+            reason = f"{reason}: {state.last_error}"
+        st.warning(
+            f"Embeddings are running in-memory ({reason}). "
+            f"They reset when the app restarts. Target directory: `{persist_path}`.",
+            icon="⚠️",
+        )
+    else:
+        st.warning(
+            "Embeddings persistence disabled via `QNA_USE_CHROMADB=0`; "
+            f"vectors reset between sessions. Target directory: `{persist_path}`.",
+            icon="⚠️",
+        )
 
 
 def _preview_rows(
@@ -221,6 +253,7 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
         if not sheets:
             st.write("- _No sheet sources registered yet._")
             continue
+        embedding_counts = repo.get_sheet_embedding_counts(sheet_ids=[sheet.id for sheet in sheets])
         for sheet in sheets:
             visibility = (
                 "Hidden Opt-In" if sheet.visibility_state.value == "hidden_opt_in" else "Visible"
@@ -229,9 +262,14 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
             last_refreshed = (
                 sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else "N/A"
             )
+            vector_count = embedding_counts.get(sheet.id, 0)
+            if vector_count:
+                embedding_label = f"{vector_count:,} embeddings"
+            else:
+                embedding_label = "⚠️ no embeddings yet"
             message = (
                 f"- ``{sheet.display_label}`` ({visibility}, status {status}, "
-                f"{sheet.row_count} rows, refreshed {last_refreshed})"
+                f"{sheet.row_count} rows, refreshed {last_refreshed}, {embedding_label})"
             )
             if sheet.status != SheetStatus.ACTIVE:
                 st.warning(message)
@@ -290,6 +328,7 @@ def main() -> None:
         "Upload CSV or Excel files, expose individual sheets to the catalog, "
         "and opt in hidden tabs with audit logging."
     )
+    _render_persistence_status()
 
     state = ensure_session_defaults()
     reset_flag = "ingest_reset_pending"
@@ -427,6 +466,7 @@ def main() -> None:
                     "Sheet": sheet_result.sheet.sheet_name,
                     "Visibility": sheet_result.sheet.visibility_state.value,
                     "Rows": sheet_result.sheet.row_count,
+                    "Embeddings": sheet_result.embedding_summary.vector_count,
                 }
                 for sheet_result in bundle_result.sheets
             ]

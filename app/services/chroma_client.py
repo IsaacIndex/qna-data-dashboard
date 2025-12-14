@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.utils.config import (
     CHROMA_DB_ENV,
@@ -21,8 +22,21 @@ except ImportError:  # pragma: no cover
 LOGGER = get_logger(__name__)
 
 DEFAULT_CHROMA_DIR = str(DEFAULT_DATA_ROOT / DEFAULT_EMBEDDINGS_SUBDIR)
-CHROMA_MODE = os.getenv("QNA_USE_CHROMADB", "0").lower()
+CHROMA_MODE = os.getenv("QNA_USE_CHROMADB", "1").lower()
 PREFER_REAL_CHROMA = CHROMA_MODE in {"1", "true", "yes", "on", "persist"}
+_RUNTIME_STATE: dict[str, object] = {
+    "persist_directory": Path(DEFAULT_CHROMA_DIR),
+    "is_persistent": False,
+    "last_error": None,
+}
+
+
+@dataclass(frozen=True)
+class ChromaRuntimeState:
+    persist_directory: Path
+    prefers_persistent: bool
+    is_persistent: bool
+    last_error: str | None
 
 
 class InMemoryCollection:
@@ -70,6 +84,7 @@ def _resolve_persist_directory(persist_directory: str | None = None) -> Path:
     base_value = persist_directory or base_env or DEFAULT_CHROMA_DIR
     base = Path(base_value)
     base.mkdir(parents=True, exist_ok=True)
+    _RUNTIME_STATE["persist_directory"] = base
     return base
 
 
@@ -85,12 +100,20 @@ def get_chroma_client(persist_directory: str | None = None) -> object:  # type: 
     base = _resolve_persist_directory(persist_directory)
     if PREFER_REAL_CHROMA:
         try:
-            return _build_real_chroma_client(base)
+            client = _build_real_chroma_client(base)
+            _RUNTIME_STATE["is_persistent"] = True
+            _RUNTIME_STATE["last_error"] = None
+            return client
         except Exception as error:  # pragma: no cover - log and fall back
             LOGGER.warning(
                 "Failed to initialize persistent ChromaDB client: %s. Falling back to in-memory.",
                 error,
             )
+            _RUNTIME_STATE["is_persistent"] = False
+            _RUNTIME_STATE["last_error"] = str(error)
+    else:
+        _RUNTIME_STATE["is_persistent"] = False
+        _RUNTIME_STATE["last_error"] = None
     return InMemoryChromaClient()
 
 
@@ -102,3 +125,12 @@ def get_or_create_collection(
 ) -> object:
     client = get_chroma_client(persist_directory=persist_directory)
     return client.get_or_create_collection(name=name, metadata=metadata or {})
+
+
+def get_chroma_runtime_state() -> ChromaRuntimeState:
+    return ChromaRuntimeState(
+        persist_directory=cast(Path, _RUNTIME_STATE["persist_directory"]),
+        prefers_persistent=PREFER_REAL_CHROMA,
+        is_persistent=bool(_RUNTIME_STATE["is_persistent"]),
+        last_error=cast(str | None, _RUNTIME_STATE["last_error"]),
+    )

@@ -12,7 +12,7 @@ try:  # pragma: no cover - optional dependency for Excel datasets
 except ImportError:  # pragma: no cover - handled during hydration
     load_workbook = None
 
-from sqlalchemy import Select, create_engine, delete, select
+from sqlalchemy import Select, create_engine, delete, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
@@ -553,6 +553,25 @@ class MetadataRepository:
             embedding.vector_path = vector_path
             embedding.embedding_dim = embedding_dim
         return embedding
+
+    def get_sheet_embedding_counts(self, sheet_ids: Sequence[str] | None = None) -> dict[str, int]:
+        stmt = (
+            select(QueryRecord.sheet_id, func.count(EmbeddingVector.id))
+            .join(EmbeddingVector, EmbeddingVector.query_record_id == QueryRecord.id)
+            .group_by(QueryRecord.sheet_id)
+        )
+        if sheet_ids:
+            stmt = stmt.where(QueryRecord.sheet_id.in_(tuple(sheet_ids)))
+        rows = self.session.execute(stmt).all()
+        counts: dict[str, int] = {}
+        for sheet_id, count in rows:
+            if sheet_id is None:
+                continue
+            counts[sheet_id] = int(count or 0)
+        if sheet_ids:
+            for sheet_id in sheet_ids:
+                counts.setdefault(sheet_id, 0)
+        return counts
 
     # Clusters ------------------------------------------------------------
     def save_similarity_clusters(

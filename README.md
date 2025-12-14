@@ -60,7 +60,7 @@ Key environment variables (all optional):
 | `DATA_ROOT` | `./data` | Root directory for raw uploads, caches, and logs. |
 | `CHROMA_PERSIST_DIR` | `<DATA_ROOT>/embeddings` | Preferred Chroma persistence directory for semantic vectors. |
 | `CHROMA_DB_DIR` | `<DATA_ROOT>/chromadb` | Legacy alias for the Chroma persistence path (still honored). |
-| `QNA_USE_CHROMADB` | `0` | Toggle the real Chroma client (`1`) vs the bundled in-memory adapter (`0`). |
+| `QNA_USE_CHROMADB` | `1` | Prefer the persistent Chroma client (`0` forces the bundled in-memory adapter). |
 | `EMBEDDING_MODEL_ID` | `nomic-embed-text` | Embedding model used for semantic search and stored in Chroma metadata. |
 | `EMBEDDING_MODEL_VERSION` | `<EMBEDDING_MODEL_ID>-v1` | Version tag persisted with embeddings to track refresh cadence. |
 | `SENTENCE_TRANSFORMER_MODEL` | `all-MiniLM-L6-v2` | Legacy model env that also feeds `EMBEDDING_MODEL_ID` when set. |
@@ -82,7 +82,7 @@ poetry run uvicorn app.api.router:create_app --factory --reload
 Endpoints cover bundle uploads, sheet metadata, search, query previews, and analytics jobs. The service shares the same configuration options as the Streamlit app.
 
 ## Embedding Persistence & Refresh
-- Chroma vectors persist under `CHROMA_PERSIST_DIR` (preferred) or `CHROMA_DB_DIR` (legacy). Set `QNA_USE_CHROMADB=1` to use the persistent client; otherwise an in-memory adapter is used and cleared between runs.
+- Chroma vectors persist under `CHROMA_PERSIST_DIR` (preferred) or `CHROMA_DB_DIR` (legacy). Persistent mode is on by default; set `QNA_USE_CHROMADB=0` to force the in-memory adapter. The ingest page surfaces the active mode plus per-sheet embedding readiness so you can confirm vectors exist before searching.
 - Embeddings carry `EMBEDDING_MODEL_ID` and `EMBEDDING_MODEL_VERSION` tags so stale vectors can be detected and refreshed.
 - Target same-day refresh (≤15 minutes per batch) when datasets change or the embedding model is updated; if persistence is missing, searches continue lexically with a fallback banner until embeddings are rebuilt.
 
@@ -110,7 +110,7 @@ poetry run mypy
 
 ## Troubleshooting
 - **SentenceTransformer unavailable** – the app automatically falls back to hash-based embeddings so searches remain functional without downloading models.
-- **ChromaDB not installed** – keep `QNA_USE_CHROMADB=0` (default) to use the in-memory adapter; install `chromadb`, set `QNA_USE_CHROMADB=1`, and point `CHROMA_PERSIST_DIR` to a writable path for persisted vectors.
+- **ChromaDB not installed** – either install `chromadb` to keep the default persistent experience, or set `QNA_USE_CHROMADB=0` to run the in-memory adapter (vectors reset between runs).
 - **Database locked errors** – ensure no stray processes hold `data/metadata.db`; the repository uses SQLite with relaxed thread checks for Streamlit compatibility.
 
 ## Contributing
