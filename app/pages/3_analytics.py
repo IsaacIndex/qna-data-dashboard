@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.orm import Session, sessionmaker
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -26,7 +27,7 @@ LOGGER = get_logger(__name__)
 
 
 @cache_resource
-def _get_session_factory():
+def _get_session_factory() -> sessionmaker[Session]:
     engine = build_engine()
     init_database(engine)
     return create_session_factory(engine)
@@ -53,9 +54,11 @@ def _summary_metrics(service: AnalyticsService, dataset_ids: list[str]) -> dict[
     return metrics
 
 
-def _clusters_dataframe(clusters) -> pd.DataFrame:
+def _clusters_dataframe(clusters: Sequence[object] | None) -> pd.DataFrame:
     if not clusters:
-        return pd.DataFrame(columns=["Cluster", "Datasets", "Members", "Diversity", "Centroid Similarity"])
+        return pd.DataFrame(
+            columns=["Cluster", "Datasets", "Members", "Diversity", "Centroid Similarity"]
+        )
     rows = []
     for cluster in clusters:
         rows.append(
@@ -89,14 +92,18 @@ def main() -> None:
 
         if st.button("Refresh Analytics", type="primary"):
             try:
-                with log_timing(LOGGER, "streamlit.analytics.refresh", dataset_count=len(selected_ids) or "all"):
+                with log_timing(
+                    LOGGER, "streamlit.analytics.refresh", dataset_count=len(selected_ids) or "all"
+                ):
                     analytics_service.build_clusters(selected_ids or None)
                 st.success("Analytics refreshed.")
             except Exception as error:  # pragma: no cover - handled via UI
                 LOGGER.exception("Analytics refresh failed: %s", error)
                 st.error(f"Failed to refresh analytics: {error}")
 
-        with log_timing(LOGGER, "streamlit.analytics.load", dataset_count=len(selected_ids) or "all"):
+        with log_timing(
+            LOGGER, "streamlit.analytics.load", dataset_count=len(selected_ids) or "all"
+        ):
             metrics = _summary_metrics(analytics_service, selected_ids)
         summary = metrics["summary"]
         clusters = metrics["clusters"]

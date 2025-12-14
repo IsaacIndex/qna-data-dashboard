@@ -109,5 +109,7 @@ def test_import_bundle_includes_hidden_sheet_when_opted_in(
     sheet_names = {sheet["sheetName"] for sheet in catalog["sheets"]}
     assert sheet_names == {"North", "South", "HiddenStrategic"}
 
-    hidden_sheet = next(sheet for sheet in catalog["sheets"] if sheet["sheetName"] == "HiddenStrategic")
+    hidden_sheet = next(
+        sheet for sheet in catalog["sheets"] if sheet["sheetName"] == "HiddenStrategic"
+    )
     assert hidden_sheet["visibilityState"] == "hidden_opt_in"

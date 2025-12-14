@@ -1,0 +1,145 @@
+openapi: 3.0.0
+info:
+  title: Dual-Mode Search API
+  version: "0.1.0"
+paths:
+  /search:
+    get:
+      summary: Run both semantic (embeddings) and lexical (SequenceMatcher) searches for a query.
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Natural language search query.
+        - in: query
+          name: datasetIds
+          required: false
+          schema:
+            type: string
+          description: Comma-separated dataset IDs to filter results.
+        - in: query
+          name: columnNames
+          required: false
+          schema:
+            type: string
+          description: Comma-separated column names to filter results.
+        - in: query
+          name: minSimilarityPercent
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0
+            maximum: 100
+            default: 60
+          description: Minimum similarity threshold applied to both modes (converted to 0-1).
+        - in: query
+          name: limitPerMode
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+          description: Maximum results per mode (semantic and lexical lists paginate independently).
+        - in: query
+          name: offsetSemantic
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Offset for semantic results pagination.
+        - in: query
+          name: offsetLexical
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Offset for lexical results pagination.
+      responses:
+        "200":
+          description: Dual-mode search results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  legend:
+                    type: object
+                    description: Similarity legend shared by both modes.
+                  contextual_defaults:
+                    type: object
+                    description: Dataset-specific contextual column defaults.
+                  semantic_results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchResult"
+                  lexical_results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchResult"
+                  pagination:
+                    type: object
+                    properties:
+                      semantic:
+                        $ref: "#/components/schemas/Pagination"
+                      lexical:
+                        $ref: "#/components/schemas/Pagination"
+                  fallback:
+                    type: object
+                    properties:
+                      semantic_available:
+                        type: boolean
+                      message:
+                        type: string
+                required: [legend, semantic_results, lexical_results, pagination]
+        "400":
+          description: Invalid query parameters (e.g., empty query).
+        "503":
+          description: Embedding index unavailable; only lexical results returned with fallback message.
+
+components:
+  schemas:
+    SearchResult:
+      type: object
+      properties:
+        test_case_id:
+          type: string
+        dataset_id:
+          type: string
+        text:
+          type: string
+        similarity:
+          type: number
+          format: float
+        mode:
+          type: string
+          enum: [semantic, lexical]
+        metadata:
+          type: object
+          additionalProperties: true
+        rank:
+          type: integer
+      required:
+        - test_case_id
+        - dataset_id
+        - text
+        - similarity
+        - mode
+        - rank
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        next_offset:
+          type: integer
+          nullable: true
+      required: [limit, offset]

@@ -13,7 +13,9 @@ def test_validate_join_keys_missing_column_raises() -> None:
     primary_schema = [_schema("region", "string")]
     join_schema = [_schema("region_code", "string")]
 
-    with pytest.raises(QueryValidationError, match="Join column 'region' missing on sheet alias 'budget'"):
+    with pytest.raises(
+        QueryValidationError, match="Join column 'region' missing on sheet alias 'budget'"
+    ):
         QueryBuilderService.validate_join_keys(
             primary_schema,
             join_schema,
@@ -36,7 +38,8 @@ def test_validate_join_keys_type_mismatch_warns() -> None:
     )
 
     assert warnings == [
-        "Join column 'region' uses incompatible types between 'sales' (string) and 'budget' (number)."
+        "Join column 'region' uses incompatible types between 'sales' (string) "
+        "and 'budget' (number)."
     ]
 
 

@@ -229,3 +229,7 @@ if __name__ == "__main__":
 
 For larger datasets you can point LangChain at a persistent vector backend (e.g. a persisted FAISS index, pgvector, Qdrant, etc.) and still keep the same high-level `semantic_search` API in your code.
 
+## Chroma persistence & refresh cadence
+- Embeddings persist locally under `CHROMA_PERSIST_DIR` (default `./data/embeddings`); the legacy `CHROMA_DB_DIR` env is still honored. Set `QNA_USE_CHROMADB=1` to force the persistent client, or leave unset to use the bundled in-memory adapter for quick trials.
+- Each persisted vector is tagged with `EMBEDDING_MODEL_ID` and `EMBEDDING_MODEL_VERSION` so stale data can be detected. Target a same-day refresh (<=15 minutes per batch) whenever datasets change or the embedding model is updated.
+- If persistence is missing or embeddings fail to load, the search service falls back to lexical results and surfaces a clear fallback message in the UI and API payloads until embeddings are rebuilt.

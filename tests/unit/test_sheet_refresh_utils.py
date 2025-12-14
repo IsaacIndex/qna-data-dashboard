@@ -13,10 +13,14 @@ def _schema(*names: str) -> list[dict[str, object]]:
 
 def test_match_sheets_reuses_existing_by_name() -> None:
     existing = [
-        ExistingSheetSnapshot(id="north", sheet_name="North", checksum="old", column_schema=_schema("a"), row_count=2)
+        ExistingSheetSnapshot(
+            id="north", sheet_name="North", checksum="old", column_schema=_schema("a"), row_count=2
+        )
     ]
     discovered = [
-        DiscoveredSheetSnapshot(sheet_name="North", checksum="new", column_schema=_schema("a"), row_count=2)
+        DiscoveredSheetSnapshot(
+            sheet_name="North", checksum="new", column_schema=_schema("a"), row_count=2
+        )
     ]
 
     matches, deactivated = match_sheets(existing, discovered, tolerance="strict")
@@ -30,10 +34,18 @@ def test_match_sheets_reuses_existing_by_name() -> None:
 
 def test_match_sheets_detects_rename_by_checksum() -> None:
     existing = [
-        ExistingSheetSnapshot(id="south", sheet_name="South", checksum="hash1", column_schema=_schema("region"), row_count=2)
+        ExistingSheetSnapshot(
+            id="south",
+            sheet_name="South",
+            checksum="hash1",
+            column_schema=_schema("region"),
+            row_count=2,
+        )
     ]
     discovered = [
-        DiscoveredSheetSnapshot(sheet_name="SouthEast", checksum="hash1", column_schema=_schema("region"), row_count=2)
+        DiscoveredSheetSnapshot(
+            sheet_name="SouthEast", checksum="hash1", column_schema=_schema("region"), row_count=2
+        )
     ]
 
     matches, deactivated = match_sheets(existing, discovered, tolerance="strict")
@@ -47,10 +59,18 @@ def test_match_sheets_detects_rename_by_checksum() -> None:
 
 def test_match_sheets_uses_schema_when_allowed() -> None:
     existing = [
-        ExistingSheetSnapshot(id="south", sheet_name="South", checksum="hash1", column_schema=_schema("region"), row_count=2)
+        ExistingSheetSnapshot(
+            id="south",
+            sheet_name="South",
+            checksum="hash1",
+            column_schema=_schema("region"),
+            row_count=2,
+        )
     ]
     discovered = [
-        DiscoveredSheetSnapshot(sheet_name="SouthEast", checksum="hash2", column_schema=_schema("region"), row_count=2)
+        DiscoveredSheetSnapshot(
+            sheet_name="SouthEast", checksum="hash2", column_schema=_schema("region"), row_count=2
+        )
     ]
 
     matches_strict, _ = match_sheets(existing, discovered, tolerance="strict")
@@ -65,11 +85,25 @@ def test_match_sheets_uses_schema_when_allowed() -> None:
 
 def test_match_sheets_marks_remaining_as_deactivated() -> None:
     existing = [
-        ExistingSheetSnapshot(id="north", sheet_name="North", checksum="hash-n", column_schema=_schema("a"), row_count=2),
-        ExistingSheetSnapshot(id="south", sheet_name="South", checksum="hash-s", column_schema=_schema("a"), row_count=2),
+        ExistingSheetSnapshot(
+            id="north",
+            sheet_name="North",
+            checksum="hash-n",
+            column_schema=_schema("a"),
+            row_count=2,
+        ),
+        ExistingSheetSnapshot(
+            id="south",
+            sheet_name="South",
+            checksum="hash-s",
+            column_schema=_schema("a"),
+            row_count=2,
+        ),
     ]
     discovered = [
-        DiscoveredSheetSnapshot(sheet_name="North", checksum="hash-x", column_schema=_schema("a"), row_count=2)
+        DiscoveredSheetSnapshot(
+            sheet_name="North", checksum="hash-x", column_schema=_schema("a"), row_count=2
+        )
     ]
 
     matches, deactivated = match_sheets(existing, discovered, tolerance="strict")

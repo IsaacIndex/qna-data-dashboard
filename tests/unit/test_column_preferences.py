@@ -79,7 +79,9 @@ class FakeMetadataRepository:
         return self.preference
 
 
-def _snapshot(columns: list[tuple[str, str, int]], *, dataset_id: str = "dataset-123", max_columns: int = 10):
+def _snapshot(
+    columns: list[tuple[str, str, int]], *, dataset_id: str = "dataset-123", max_columns: int = 10
+):
     return PreferenceSnapshot(
         dataset_id=dataset_id,
         user_id=None,

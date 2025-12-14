@@ -20,10 +20,10 @@ def test_similarity_bands_cover_full_scale() -> None:
         ("Very High", (86, 100)),
     ]
 
-    for band, (label, bounds) in zip(SIMILARITY_BANDS, expected):
+    for band, (label, bounds) in zip(SIMILARITY_BANDS, expected, strict=False):
         assert band.label == label
         assert (band.min_score, band.max_score) == bounds
         assert band.bucket
 
-    for current, nxt in zip(SIMILARITY_BANDS, SIMILARITY_BANDS[1:]):
+    for current, nxt in zip(SIMILARITY_BANDS, SIMILARITY_BANDS[1:], strict=False):
         assert current.max_score < nxt.min_score

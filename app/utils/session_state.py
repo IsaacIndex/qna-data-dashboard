@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import MutableMapping, Sequence
 from copy import deepcopy
-from datetime import datetime, timezone
-from typing import Any, MutableMapping, Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 SessionStore = MutableMapping[str, Any]
 
@@ -26,7 +27,9 @@ def _get_store(store: SessionStore | None) -> SessionStore:
         return store
     try:
         import streamlit as st  # type: ignore
-    except ModuleNotFoundError as error:  # pragma: no cover - Streamlit only available in app runtime
+    except (
+        ModuleNotFoundError
+    ) as error:  # pragma: no cover - Streamlit only available in app runtime
         raise RuntimeError("Streamlit session state is unavailable outside the app.") from error
     return st.session_state
 
@@ -45,7 +48,7 @@ def ensure_session_defaults(
     return state
 
 
-def update_session_state(store: SessionStore | None = None, **updates: Any) -> SessionStore:
+def update_session_state(store: SessionStore | None = None, **updates: object) -> SessionStore:
     """Update session state with provided values after defaults are ensured."""
     state = ensure_session_defaults(store)
     for key, value in updates.items():
@@ -79,6 +82,6 @@ def confirm_reset(
             state.pop(key, None)
 
     state["reset_requested"] = False
-    state["last_reset_at"] = datetime.now(timezone.utc)
+    state["last_reset_at"] = datetime.now(UTC)
     state["reset_reason"] = None
     return True

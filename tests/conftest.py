@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
@@ -75,8 +74,8 @@ def chroma_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     finally:
         try:
             client.reset()
-        except Exception:
-            pass
+        except Exception as error:
+            print(f"Failed to reset Chroma client: {error}")
         get_chroma_client.cache_clear()
 
 

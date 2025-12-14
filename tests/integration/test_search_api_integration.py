@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
-
-import pytest
 
 from app.db.metadata import MetadataRepository
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
@@ -22,7 +20,9 @@ class SearchEmbeddingStub:
                 vector_path=f"{job.data_file.id}-{idx}",
                 embedding_dim=1,
             )
-        return EmbeddingSummary(vector_count=len(job.records), model_name="stub-model", model_dimension=1)
+        return EmbeddingSummary(
+            vector_count=len(job.records), model_name="stub-model", model_dimension=1
+        )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
         vectors = [[float(len(text))] for text in texts]
@@ -84,10 +84,14 @@ def test_search_service_filters_and_thresholds(
     assert results, "Expected search results for similar content"
     assert all(result.dataset_id in {dataset_a.id, dataset_b.id} for result in results)
 
-    filtered = service.search(query="reset password workflow", dataset_ids=[dataset_a.id], column_names=["question"])
+    filtered = service.search(
+        query="reset password workflow", dataset_ids=[dataset_a.id], column_names=["question"]
+    )
     assert filtered, "Expected filtered results"
     assert all(result.dataset_id == dataset_a.id for result in filtered)
     assert all(result.column_name == "question" for result in filtered)
 
-    strict = service.search(query="reset password workflow", dataset_ids=[dataset_b.id], min_similarity=0.95)
+    strict = service.search(
+        query="reset password workflow", dataset_ids=[dataset_b.id], min_similarity=0.95
+    )
     assert strict == [], "Unrelated dataset should not meet high similarity threshold"

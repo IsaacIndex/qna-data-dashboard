@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import streamlit as st
+
+# Ensure package imports work when launched as a file via `streamlit run app/main.py`.
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from app.utils.config import get_chroma_persist_dir, get_data_root
 
 APP_TITLE = "Local Query Coverage Analytics"
 
@@ -13,8 +21,8 @@ def _ensure_directory(path: Path) -> None:
 
 
 def prepare_data_directories() -> Path:
-    data_root = Path(os.getenv("DATA_ROOT", "./data")).expanduser()
-    chroma_dir = Path(os.getenv("CHROMA_DB_DIR", data_root / "chromadb")).expanduser()
+    data_root = get_data_root()
+    chroma_dir = get_chroma_persist_dir(data_root)
     logs_dir = Path(os.getenv("QNA_LOG_DIR", data_root / "logs")).expanduser()
 
     _ensure_directory(data_root)

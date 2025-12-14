@@ -18,6 +18,11 @@ ignore = [
   "ANN102",
 ]
 
+[lint.per-file-ignores]
+"tests/**/*" = ["S101", "ANN001", "ANN201", "ANN202", "ANN204", "UP035", "E402", "B905"]
+"app/pages/**/*" = ["E402"]
+"app/api/router.py" = ["B008"]
+
 [format]
 quote-style = "double"
 indent-style = "space"

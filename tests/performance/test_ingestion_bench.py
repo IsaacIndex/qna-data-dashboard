@@ -9,10 +9,8 @@ pytest.importorskip("pytest_benchmark", reason="pytest-benchmark plugin not avai
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import PerformanceMetric
-from app.services.ingestion import IngestionOptions, IngestionService
-
-
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
+from app.services.ingestion import IngestionOptions, IngestionResult, IngestionService
 
 
 class NoOpEmbeddingService:
@@ -45,16 +43,22 @@ def test_ingestion_benchmark_under_budget(
         data_root=temp_data_root,
     )
 
-    def run_ingestion():
+    counter = {"runs": 0}
+
+    def run_ingestion() -> IngestionResult:
+        counter["runs"] += 1
+        _write_csv(source, rows=2000 + counter["runs"])
         return service.ingest_file(
             source_path=source,
             display_name="Benchmark Dataset",
-            options=IngestionOptions(selected_columns=["query"]),
+            options=IngestionOptions(selected_columns=["query"], allow_duplicate_import=True),
         )
 
     result = benchmark(run_ingestion)
-    assert result.data_file.row_count == 2000
+    assert result.data_file.row_count >= 2000
 
-    metric = db_session.query(PerformanceMetric).order_by(PerformanceMetric.recorded_at.desc()).first()
+    metric = (
+        db_session.query(PerformanceMetric).order_by(PerformanceMetric.recorded_at.desc()).first()
+    )
     assert metric is not None
     assert metric.p95_ms <= 300_000

@@ -3,11 +3,12 @@ from __future__ import annotations
 import re
 import sys
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.orm import Session, sessionmaker
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -37,7 +38,7 @@ LOGGER = get_logger(__name__)
 
 
 @cache_resource
-def _get_session_factory():
+def _get_session_factory() -> sessionmaker[Session]:
     engine = build_engine()
     init_database(engine)
     return create_session_factory(engine)
@@ -61,7 +62,9 @@ def _describe_sheet(sheet: SheetSource) -> dict[str, object]:
         "column_schema": sheet.column_schema,
         "status": sheet.status.value,
         "visibility": sheet.visibility_state.value,
-        "last_refreshed_at": sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else None,
+        "last_refreshed_at": (
+            sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else None
+        ),
     }
 
 
@@ -110,7 +113,9 @@ def _render_table(rows: list[list[str]], headers: list[str]) -> None:
 
 def main() -> None:
     st.title("Query Builder Preview")
-    st.caption("Combine sheet sources, choose projections, and run join previews before saving a query.")
+    st.caption(
+        "Combine sheet sources, choose projections, and run join previews before saving a query."
+    )
 
     with session_scope(_get_session_factory()) as session:
         repo = MetadataRepository(session)
@@ -138,7 +143,7 @@ def main() -> None:
     st.caption(info_message)
     if primary_sheet["status"] != "active":
         st.warning(
-            "Primary sheet is not active. Preview results may be stale until the bundle is refreshed."
+            "Primary sheet is inactive; preview results may be stale until the bundle is refreshed."
         )
 
     other_labels = [label for label in sheet_options if label != primary_label]
@@ -235,13 +240,17 @@ def main() -> None:
                 key=f"filter_col_{primary_sheet['id']}",
             )
             filter_input = st.text_input("Filter value", key=f"filter_val_{primary_sheet['id']}")
-            filter_value = _coerce_filter_value(filter_input, column=filter_column, sheet=primary_sheet)
+            filter_value = _coerce_filter_value(
+                filter_input, column=filter_column, sheet=primary_sheet
+            )
 
     if st.button("Preview Query", type="primary"):
         try:
             if projection_mode == "Detail rows":
                 if not any(columns_selection.values()):
-                    raise QueryValidationError("Select at least one column to include in the preview.")
+                    raise QueryValidationError(
+                        "Select at least one column to include in the preview."
+                    )
             else:
                 if not aggregate_selection:
                     raise QueryValidationError("Select at least one numeric column to aggregate.")
@@ -282,11 +291,15 @@ def main() -> None:
                 for alias, columns in columns_selection.items():
                     for column in columns:
                         label = f"{alias}.{column}"
-                        projections.append(QueryProjection(expression=f"{alias}.{column}", label=label))
+                        projections.append(
+                            QueryProjection(expression=f"{alias}.{column}", label=label)
+                        )
             else:
                 for alias, column in aggregate_selection:
                     label = f"sum_{alias}_{column}"
-                    projections.append(QueryProjection(expression=f"sum({alias}.{column})", label=label))
+                    projections.append(
+                        QueryProjection(expression=f"sum({alias}.{column})", label=label)
+                    )
 
             filters: list[QueryFilter] = []
             if enable_filter and filter_column:
@@ -323,7 +336,9 @@ def main() -> None:
                     warnings=len(result.warnings),
                 )
 
-            st.success(f"Preview completed in {result.execution_ms:.1f} ms ({result.row_count} rows).")
+            st.success(
+                f"Preview completed in {result.execution_ms:.1f} ms ({result.row_count} rows)."
+            )
             if result.warnings:
                 st.warning("\n".join(result.warnings))
             _render_table(result.rows, result.headers)

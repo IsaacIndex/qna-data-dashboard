@@ -4,7 +4,7 @@ Local-first Streamlit dashboard for exploring query coverage, semantic search qu
 
 ## Features
 - Local ingestion pipeline for CSV and Excel bundles with per-sheet visibility controls and column selection that now deduplicates headers across all sheets for quicker trial setup.
-- Semantic search with optional SentenceTransformer embeddings and a Chroma-compatible persistence layer (in-memory by default for offline use).
+- Dual-mode search that runs semantic embeddings (Chroma-backed) alongside lexical SequenceMatcher results with per-mode pagination.
 - Query Builder that previews joined sheets, flags conflicts, and helps analysts validate trial joins before committing.
 - Coverage Analytics page that materializes redundancy metrics, cluster summaries, and diversity scores with one-click refreshes.
 - FastAPI backend exposing ingestion, search, and analytics endpoints for automation-friendly workflows.
@@ -47,10 +47,10 @@ On first launch the app ensures `./data/` exists with subdirectories for raw upl
 
 ## How Search Works
 - Corpus is built during ingestion: selected columns are normalized (trimmed, whitespace-collapsed, numbers dropped) into `QueryRecord` rows that retain dataset, sheet, column, and row offsets.
-- Each search loads up to 5k recent candidates (optionally filtered by dataset or column), scores them with a lightweight `difflib.SequenceMatcher` similarity against the query, and keeps matches above the default 0.6 threshold.
-- Results are sorted by similarity, capped to the requested limit (default 20), and annotated with a 0–100% score plus palette buckets used by the UI legend.
+- Each search loads up to 5k recent candidates (optionally filtered by dataset or column), runs lexical similarity via `difflib.SequenceMatcher`, and in parallel computes semantic scores using embeddings persisted in Chroma with `EMBEDDING_MODEL_ID`.
+- Responses return separate `semantic_results` and `lexical_results` lists plus `pagination.semantic` and `pagination.lexical` objects that track `limit`, `offset`, and `next_offset` (default `limitPerMode` is 10, capped at 50).
 - Dataset-specific contextual columns come from saved analyst preferences; missing fields are tolerated and logged so searches still return even when a sheet schema drifts.
-- Search latency and per-sheet metrics are recorded to SQLite for the analytics view; the flow remains local-first and works even without external embedding downloads.
+- Search latency and per-sheet metrics are recorded to SQLite for the analytics view with a target P95 under 2s; if embeddings are unavailable, the API falls back to lexical results with a banner in the UI.
 
 ## Configuration
 Key environment variables (all optional):
@@ -58,9 +58,12 @@ Key environment variables (all optional):
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DATA_ROOT` | `./data` | Root directory for raw uploads, caches, and logs. |
-| `CHROMA_DB_DIR` | `<DATA_ROOT>/chromadb` | Embedding persistence directory when Chroma-compatible storage is enabled. |
-| `QNA_USE_CHROMADB` | `0` | Toggle real ChromaDB client usage; keep `0` for the bundled in-memory implementation. |
-| `SENTENCE_TRANSFORMER_MODEL` | `all-MiniLM-L6-v2` | Model name used by `sentence-transformers`; falls back to deterministic hashes if unavailable. |
+| `CHROMA_PERSIST_DIR` | `<DATA_ROOT>/embeddings` | Preferred Chroma persistence directory for semantic vectors. |
+| `CHROMA_DB_DIR` | `<DATA_ROOT>/chromadb` | Legacy alias for the Chroma persistence path (still honored). |
+| `QNA_USE_CHROMADB` | `1` | Prefer the persistent Chroma client (`0` forces the bundled in-memory adapter). |
+| `EMBEDDING_MODEL_ID` | `nomic-embed-text` | Embedding model used for semantic search and stored in Chroma metadata. |
+| `EMBEDDING_MODEL_VERSION` | `<EMBEDDING_MODEL_ID>-v1` | Version tag persisted with embeddings to track refresh cadence. |
+| `SENTENCE_TRANSFORMER_MODEL` | `all-MiniLM-L6-v2` | Legacy model env that also feeds `EMBEDDING_MODEL_ID` when set. |
 | `SQLITE_URL` | `sqlite:///data/metadata.db` | Location of the metadata store that tracks bundles, sheets, queries, and metrics. |
 | `QNA_LOG_DIR` | `<DATA_ROOT>/logs` | Directory for structured app logs. |
 | `QNA_LOG_LEVEL` | `INFO` | Logging verbosity across Streamlit and FastAPI components. |
@@ -77,6 +80,11 @@ poetry run uvicorn app.api.router:create_app --factory --reload
 ```
 
 Endpoints cover bundle uploads, sheet metadata, search, query previews, and analytics jobs. The service shares the same configuration options as the Streamlit app.
+
+## Embedding Persistence & Refresh
+- Chroma vectors persist under `CHROMA_PERSIST_DIR` (preferred) or `CHROMA_DB_DIR` (legacy). Persistent mode is on by default; set `QNA_USE_CHROMADB=0` to force the in-memory adapter. The ingest page surfaces the active mode plus per-sheet embedding readiness so you can confirm vectors exist before searching.
+- Embeddings carry `EMBEDDING_MODEL_ID` and `EMBEDDING_MODEL_VERSION` tags so stale vectors can be detected and refreshed.
+- Target same-day refresh (≤15 minutes per batch) when datasets change or the embedding model is updated; if persistence is missing, searches continue lexically with a fallback banner until embeddings are rebuilt.
 
 ## Project Layout
 - `app/main.py` – Streamlit entry point and sidebar navigation.
@@ -102,7 +110,7 @@ poetry run mypy
 
 ## Troubleshooting
 - **SentenceTransformer unavailable** – the app automatically falls back to hash-based embeddings so searches remain functional without downloading models.
-- **ChromaDB not installed** – keep `QNA_USE_CHROMADB=0` (default) to use the in-memory adapter; install `chromadb` and set `QNA_USE_CHROMADB=1` only in environments where the native client is present.
+- **ChromaDB not installed** – either install `chromadb` to keep the default persistent experience, or set `QNA_USE_CHROMADB=0` to run the in-memory adapter (vectors reset between runs).
 - **Database locked errors** – ensure no stray processes hold `data/metadata.db`; the repository uses SQLite with relaxed thread checks for Streamlit compatibility.
 
 ## Contributing

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.services.preferences import hydrate_local_preferences
 from app.utils.session_state import confirm_reset, request_reset
@@ -25,9 +25,11 @@ def test_local_preferences_hydrate_and_reset_cycle() -> None:
             {"name": "response", "displayLabel": "Answer", "position": 0},
         ],
         "maxColumns": 5,
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(UTC).isoformat(),
     }
-    updated = hydrate_local_preferences(store, dataset_id="ds-1", payload=payload, defaults=defaults)
+    updated = hydrate_local_preferences(
+        store, dataset_id="ds-1", payload=payload, defaults=defaults
+    )
     assert store["selected_columns"] == ["response", "notes"]
     assert store["preference_source"] == "localStorage"
     assert store["preference_version"] == 2
@@ -41,7 +43,9 @@ def test_local_preferences_hydrate_and_reset_cycle() -> None:
     assert new_session["reset_requested"] is True
     assert confirm_reset(new_session, keys=("selected_columns", "filters", "preference_status"))
     assert new_session["selected_columns"] == []
-    rehydrated = hydrate_local_preferences(new_session, dataset_id="ds-1", payload=None, defaults=["question"])
+    rehydrated = hydrate_local_preferences(
+        new_session, dataset_id="ds-1", payload=None, defaults=["question"]
+    )
     assert new_session["selected_columns"] == ["question"]
     assert rehydrated.source == "defaults"
     assert rehydrated.selected_columns[0].display_label == "question"

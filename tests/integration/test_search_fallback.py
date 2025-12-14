@@ -12,12 +12,12 @@ from app.api.router import create_app
 from app.services.embeddings import EmbeddingJob, EmbeddingSummary
 
 
-class LegendEmbeddingStub:
+class FlakyEmbeddingStub:
     def __init__(self) -> None:
-        self.run_count = 0
+        self.available = False
 
     def run_embedding(self, job: EmbeddingJob) -> EmbeddingSummary:
-        self.run_count += 1
+        # Ingestion should continue to work even when query-time availability is toggled.
         for idx, record in enumerate(job.records):
             job.metadata_repository.upsert_embedding(
                 record_id=record.id,
@@ -31,8 +31,15 @@ class LegendEmbeddingStub:
         )
 
     def embed_texts(self, texts: Sequence[str]) -> tuple[list[list[float]], int, str]:
+        if not self.available:
+            raise RuntimeError("Embeddings temporarily unavailable")
         vectors = [[float(len(text))] for text in texts]
         return vectors, 1, "stub-model"
+
+
+@pytest.fixture
+def flaky_stub() -> FlakyEmbeddingStub:
+    return FlakyEmbeddingStub()
 
 
 @pytest.fixture
@@ -40,9 +47,10 @@ def client(
     sqlite_url: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    flaky_stub: FlakyEmbeddingStub,
 ) -> TestClient:
     monkeypatch.setenv("DATA_ROOT", str(tmp_path / "data"))
-    app = create_app(embedding_service=LegendEmbeddingStub())
+    app = create_app(embedding_service=flaky_stub)
     return TestClient(app)
 
 
@@ -50,17 +58,9 @@ def _csv_bytes() -> bytes:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=["question", "response"])
     writer.writeheader()
+    writer.writerow({"question": "Reset password workflow", "response": "Reset password workflow"})
     writer.writerow(
-        {
-            "question": "How to reset password?",
-            "response": "Use account recovery flow.",
-        }
-    )
-    writer.writerow(
-        {
-            "question": "Where can I download invoices?",
-            "response": "Invoices live on the billing portal.",
-        }
+        {"question": "Reset billing integration", "response": "Reset billing integration"}
     )
     return buffer.getvalue().encode("utf-8")
 
@@ -79,29 +79,30 @@ def _ingest_dataset(client: TestClient, display_name: str) -> str:
     return response.json()["dataset_id"]
 
 
-def test_search_returns_legend_and_contextual_defaults(client: TestClient) -> None:
-    dataset_id = _ingest_dataset(client, "FAQ Dataset")
+def test_semantic_fallback_and_recovery(client: TestClient, flaky_stub: FlakyEmbeddingStub) -> None:
+    _ingest_dataset(client, "Fallback Dataset")
 
-    response = client.get("/search", params={"q": "reset password"})
-    assert response.status_code == 200
+    first = client.get(
+        "/search",
+        params={"q": "reset", "min_similarity": 0.0, "limitPerMode": 5},
+    )
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["lexical_results"], "Lexical results should still be returned during fallback"
+    assert payload["semantic_results"] == []
+    fallback = payload["fallback"]
+    assert fallback["semantic_available"] is False
+    assert "unavailable" in (fallback["message"] or "").lower()
 
-    payload = response.json()
-    assert "legend" in payload
-    legend = payload["legend"]
-    assert legend["scale"] == "0-100%"
-    assert len(legend["palette"]) == 5
-    for band in legend["palette"]:
-        assert {"label", "min", "max", "color"} <= set(band)
+    flaky_stub.available = True
 
-    defaults = payload.get("contextual_defaults", [])
-    assert defaults, "Expected contextual defaults to be provided"
-    default_entry = next((item for item in defaults if item["dataset_id"] == dataset_id), None)
-    assert default_entry, "Expected defaults to include the ingested dataset"
-    assert default_entry["columns"], "Default contextual columns should list available fields"
-
-    assert "results" in payload and payload["results"], "Expected search results"
-    first = payload["results"][0]
-    assert "similarity_score" in first
-    assert "similarity_label" in first
-    assert "color_stop" in first
-    assert "contextual_columns" in first
+    recovered = client.get(
+        "/search",
+        params={"q": "reset", "min_similarity": 0.0, "limitPerMode": 5},
+    )
+    assert recovered.status_code == 200
+    recovered_payload = recovered.json()
+    assert recovered_payload[
+        "semantic_results"
+    ], "Semantic results should resume once embeddings recover"
+    assert recovered_payload["fallback"]["semantic_available"] is True

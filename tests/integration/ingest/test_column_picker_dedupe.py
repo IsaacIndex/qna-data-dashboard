@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.db.schema import SheetStatus
-from app.services.ingestion import ColumnCatalogEntry, aggregate_column_catalog, build_column_picker_options
+from app.services.ingestion import (
+    aggregate_column_catalog,
+    build_column_picker_options,
+)
 from app.services.preferences import persist_column_selection
 
 
@@ -18,7 +21,7 @@ class _SheetStub:
 
 
 def test_column_picker_builds_deduped_options_with_sheet_chips() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sheets = [
         _SheetStub(
             id="s1",

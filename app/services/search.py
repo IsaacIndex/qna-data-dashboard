@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
-from typing import Iterable, Sequence
 
 from app.db.metadata import MetadataRepository
 from app.db.schema import MetricType, QueryRecord, SheetMetricType, SheetSource
@@ -13,13 +13,34 @@ from app.utils.logging import get_logger, log_missing_columns
 
 LOGGER = get_logger(__name__)
 
+DEFAULT_RESULTS_PER_MODE = 10
+MAX_RESULTS_PER_MODE = 50
+
+
+def normalize_similarity_ratio(value: float, *, scale_max: float = 1.0) -> float:
+    """Normalize a similarity value to a 0-1 ratio regardless of original scale."""
+    if math.isnan(value):  # pragma: no cover - defensive path
+        return 0.0
+    if scale_max <= 0:  # pragma: no cover - guard against misconfiguration
+        return 0.0
+    clamped = max(0.0, min(value, scale_max))
+    return round(clamped / scale_max, 4)
+
 
 def similarity_to_percent(value: float) -> float:
     """Convert a 0-1 similarity ratio to a clamped 0-100 percentage."""
-    if math.isnan(value):  # pragma: no cover - defensive path
-        return 0.0
-    clamped = max(0.0, min(value, 1.0))
-    return round(clamped * 100.0, 2)
+    return round(normalize_similarity_ratio(value) * 100.0, 2)
+
+
+def normalize_lexical_similarity(value: float) -> float:
+    """Normalize SequenceMatcher scores to the shared 0-1 scale."""
+    return normalize_similarity_ratio(value, scale_max=1.0)
+
+
+def normalize_embedding_similarity(value: float, *, is_distance: bool = False) -> float:
+    """Normalize embedding scores (distance or similarity) to the shared 0-1 scale."""
+    score = 1.0 - value if is_distance else value
+    return normalize_similarity_ratio(score, scale_max=1.0)
 
 
 def describe_similarity_score(score_percent: float) -> tuple[str, str]:
@@ -51,11 +72,15 @@ def build_contextual_defaults(
         dataset = metadata_repository.get_data_file(dataset_id)
         if dataset is None:
             continue
-        preference = metadata_repository.get_column_preference(data_file_id=dataset_id, user_id=None)
+        preference = metadata_repository.get_column_preference(
+            data_file_id=dataset_id, user_id=None
+        )
         columns: list[dict[str, str]] = []
         source = "dataset"
         if preference and preference.selected_columns:
-            for entry in sorted(preference.selected_columns, key=lambda item: item.get("position", 0)):
+            for entry in sorted(
+                preference.selected_columns, key=lambda item: item.get("position", 0)
+            ):
                 name = str(entry.get("column_name") or "").strip()
                 if not name:
                     continue
@@ -78,6 +103,13 @@ def build_contextual_defaults(
     return defaults
 
 
+def resolve_limit_per_mode(limit_per_mode: int | None, fallback_limit: int | None = None) -> int:
+    base_limit = limit_per_mode if limit_per_mode is not None else fallback_limit
+    if base_limit is None:
+        base_limit = DEFAULT_RESULTS_PER_MODE
+    return max(1, min(base_limit, MAX_RESULTS_PER_MODE))
+
+
 @dataclass
 class SearchResult:
     record_id: str
@@ -92,6 +124,7 @@ class SearchResult:
     metadata: dict[str, object]
     contextual_columns: dict[str, object] = field(default_factory=dict)
     missing_columns: list[str] = field(default_factory=list)
+    mode: str = "lexical"
     similarity_score: float = field(init=False)
     similarity_label: str = field(init=False)
     color_stop: str = field(init=False)
@@ -120,6 +153,7 @@ class SearchResult:
             "metadata": self.metadata,
             "contextual_columns": self.contextual_columns,
             "missing_columns": self.missing_columns,
+            "mode": self.mode,
         }
 
 
@@ -136,8 +170,100 @@ class SearchService:
     ) -> None:
         self.metadata_repository = metadata_repository
         self.embedding_service = embedding_service
-        self.chroma_client = chroma_client
+        self.chroma_client = chroma_client or getattr(embedding_service, "chroma_client", None)
         self.candidate_limit = candidate_limit
+
+    def search_dual(
+        self,
+        *,
+        query: str,
+        dataset_ids: Sequence[str] | None = None,
+        column_names: Sequence[str] | None = None,
+        min_similarity: float = 0.6,
+        limit_per_mode: int | None = None,
+        offset_semantic: int = 0,
+        offset_lexical: int = 0,
+    ) -> dict[str, object]:
+        text = query.strip()
+        limit = resolve_limit_per_mode(limit_per_mode, fallback_limit=None)
+        if not text:
+            return {
+                "semantic_results": [],
+                "lexical_results": [],
+                "pagination": {
+                    "semantic": self._build_pagination(limit, offset_semantic, 0, 0),
+                    "lexical": self._build_pagination(limit, offset_lexical, 0, 0),
+                },
+                "fallback": {"semantic_available": False, "message": "Empty query"},
+            }
+
+        start = time.perf_counter()
+        candidates = self._load_candidates(dataset_ids=dataset_ids, column_names=column_names)
+        scored, sheet_lookup, record_lookup = self._score_candidates(
+            text, candidates, min_similarity=min_similarity
+        )
+        scored.sort(key=lambda entry: entry.similarity, reverse=True)
+        lexical_total = len(scored)
+        lexical_results = self._slice_results(scored, offset_lexical, limit, mode="lexical")
+        candidate_records = [
+            record_lookup[result.record_id]
+            for result in scored
+            if result.record_id in record_lookup
+        ]
+
+        semantic_results: list[SearchResult] = []
+        semantic_total = 0
+        semantic_available = False
+        semantic_message: str | None = None
+        try:
+            semantic_ranked = self._semantic_rank(
+                query=text,
+                candidates=candidate_records,
+                limit=limit + offset_semantic,
+                min_similarity=min_similarity,
+            )
+            semantic_total = len(semantic_ranked)
+            semantic_results = self._slice_results(
+                semantic_ranked, offset_semantic, limit, mode="semantic"
+            )
+            semantic_available = True
+        except Exception as error:  # pragma: no cover - ensure lexical path survives
+            semantic_available = False
+            semantic_message = str(error) or "Semantic results unavailable"
+
+        combined_results = lexical_results + semantic_results
+        selected_records = {
+            result.record_id: record_lookup[result.record_id]
+            for result in combined_results
+            if result.record_id in record_lookup
+        }
+        self._hydrate_contextual_columns(combined_results, selected_records)
+
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        if elapsed_ms <= 0:
+            elapsed_ms = 0.01
+        records_per_second = len(candidates) / (elapsed_ms / 1000.0) if candidates else None
+
+        self._record_metrics(
+            elapsed_ms=elapsed_ms,
+            records_per_second=records_per_second,
+            results=lexical_results + semantic_results,
+            sheet_lookup=sheet_lookup,
+        )
+
+        return {
+            "semantic_results": semantic_results,
+            "lexical_results": lexical_results,
+            "pagination": {
+                "semantic": self._build_pagination(
+                    limit, offset_semantic, semantic_total, len(semantic_results)
+                ),
+                "lexical": self._build_pagination(
+                    limit, offset_lexical, lexical_total, len(lexical_results)
+                ),
+            },
+            "fallback": {"semantic_available": semantic_available, "message": semantic_message},
+        }
 
     def search(
         self,
@@ -146,30 +272,105 @@ class SearchService:
         dataset_ids: Sequence[str] | None = None,
         column_names: Sequence[str] | None = None,
         min_similarity: float = 0.6,
-        limit: int = 20,
+        limit: int | None = None,
+        limit_per_mode: int | None = None,
     ) -> list[SearchResult]:
-        text = query.strip()
-        if not text:
-            return []
-        start = time.perf_counter()
-        candidates = self._load_candidates(dataset_ids=dataset_ids, column_names=column_names)
-        scored, sheet_lookup, record_lookup = self._score_candidates(
-            text, candidates, min_similarity=min_similarity
+        """Legacy single-mode search retained for callers that have not migrated."""
+        response = self.search_dual(
+            query=query,
+            dataset_ids=dataset_ids,
+            column_names=column_names,
+            min_similarity=min_similarity,
+            limit_per_mode=limit_per_mode or limit,
+            offset_semantic=0,
+            offset_lexical=0,
         )
-        scored.sort(key=lambda entry: entry.similarity, reverse=True)
-        results = scored[: max(1, limit)]
-        selected_records = {
-            result.record_id: record_lookup[result.record_id]
-            for result in results
-            if result.record_id in record_lookup
-        }
-        self._hydrate_contextual_columns(results, selected_records)
+        return response["lexical_results"]  # type: ignore[index]
 
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        if elapsed_ms <= 0:
-            elapsed_ms = 0.01
-        records_per_second = len(candidates) / (elapsed_ms / 1000.0) if candidates else None
+    def _semantic_rank(
+        self,
+        *,
+        query: str,
+        candidates: Sequence[QueryRecord],
+        limit: int,
+        min_similarity: float,
+    ) -> list[SearchResult]:
+        if self.embedding_service is None or not candidates:
+            return []
+        query_vectors, _, _ = self.embedding_service.embed_texts([query])
+        if not query_vectors:
+            return []
+        query_vector = query_vectors[0]
+        candidate_vectors, _, _ = self.embedding_service.embed_texts(
+            [record.text for record in candidates]
+        )
+        ranked: list[tuple[float, QueryRecord]] = []
+        for record, vector in zip(candidates, candidate_vectors, strict=False):
+            similarity = self._cosine_similarity(query_vector, vector)
+            normalized = normalize_embedding_similarity(similarity)
+            if normalized < min_similarity:
+                continue
+            ranked.append((similarity, record))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        top_ranked = ranked[:limit]
+        results: list[SearchResult] = []
+        for similarity, record in top_ranked:
+            sheet = record.sheet
+            results.append(
+                SearchResult(
+                    record_id=record.id,
+                    dataset_id=record.data_file_id,
+                    dataset_name=record.data_file.display_name if record.data_file else "",
+                    sheet_id=sheet.id if sheet else None,
+                    sheet_label=sheet.display_label if sheet else None,
+                    column_name=record.column_name,
+                    row_index=record.row_index,
+                    text=record.text,
+                    similarity=normalize_embedding_similarity(similarity),
+                    metadata={
+                        "original_text": record.original_text,
+                        "tags": record.tags or [],
+                        "sheet_id": sheet.id if sheet else None,
+                        "sheet_label": sheet.display_label if sheet else None,
+                        "bundle_id": sheet.bundle_id if sheet else None,
+                    },
+                    mode="semantic",
+                )
+            )
+        return results
 
+    @staticmethod
+    def _cosine_similarity(first: Sequence[float], second: Sequence[float]) -> float:
+        if not first or not second or len(first) != len(second):
+            return 0.0
+        dot = sum(a * b for a, b in zip(first, second, strict=False))
+        norm_a = math.sqrt(sum(a * a for a in first))
+        norm_b = math.sqrt(sum(b * b for b in second))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def _slice_results(
+        self,
+        results: Sequence[SearchResult],
+        offset: int,
+        limit: int,
+        *,
+        mode: str,
+    ) -> list[SearchResult]:
+        start = max(0, offset)
+        end = start + limit
+        sliced = results[start:end]
+        return [replace(result, mode=mode) for result in sliced]
+
+    def _record_metrics(
+        self,
+        *,
+        elapsed_ms: float,
+        records_per_second: float | None,
+        results: Sequence[SearchResult],
+        sheet_lookup: dict[str, SheetSource],
+    ) -> None:
         try:
             self.metadata_repository.record_performance_metric(
                 metric_type=MetricType.SEARCH,
@@ -193,7 +394,21 @@ class SearchService:
             LOGGER.warning("Failed to record search performance metric: %s", error)
             self.metadata_repository.session.rollback()  # type: ignore[attr-defined]
 
-        return results
+    def _build_pagination(
+        self,
+        limit: int,
+        offset: int,
+        total: int,
+        returned: int,
+    ) -> dict[str, int | None]:
+        next_offset: int | None = None
+        if returned + offset < total:
+            next_offset = offset + limit
+        return {
+            "limit": limit,
+            "offset": offset,
+            "next_offset": next_offset,
+        }
 
     def _load_candidates(
         self,
@@ -280,7 +495,9 @@ class SearchService:
                 continue
 
             dataset_missing: set[str] = set()
-            dataset_label = pairs[0][1].data_file.display_name if pairs[0][1].data_file else dataset_id
+            dataset_label = (
+                pairs[0][1].data_file.display_name if pairs[0][1].data_file else dataset_id
+            )
 
             for result, record in pairs:
                 row_values = self.metadata_repository.get_row_values(record)
@@ -316,6 +533,4 @@ class SearchService:
         if not second:
             return 0.0
         ratio = SequenceMatcher(None, first.lower(), second.lower()).ratio()
-        if math.isnan(ratio):  # pragma: no cover - defensive path
-            return 0.0
-        return round(ratio, 4)
+        return normalize_lexical_similarity(ratio)

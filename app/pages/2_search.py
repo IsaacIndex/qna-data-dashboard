@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.orm import Session, sessionmaker
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -37,7 +37,11 @@ from app.services.search import (  # noqa: E402
 )
 from app.utils.caching import cache_resource  # noqa: E402
 from app.utils.logging import get_logger, log_event, log_timing  # noqa: E402
-from app.utils.session_state import confirm_reset, ensure_session_defaults, request_reset  # noqa: E402
+from app.utils.session_state import (
+    confirm_reset,
+    ensure_session_defaults,
+    request_reset,
+)  # noqa: E402
 
 LOGGER = get_logger(__name__)
 PLACEHOLDER_VALUE = "—"  # Accessibility-friendly placeholder for missing values
@@ -45,7 +49,7 @@ MAX_CONTEXTUAL_COLUMNS = 10
 
 
 @cache_resource
-def _get_session_factory():
+def _get_session_factory() -> sessionmaker[Session]:
     engine = build_engine()
     init_database(engine)
     return create_session_factory(engine)
@@ -123,7 +127,7 @@ def build_contextual_guidance(
     if has_preferences:
         return ""
     if not defaults:
-        return "No contextual columns saved yet. Configure preferences to show helpful fields with each result."
+        return "No contextual columns saved yet. Configure preferences to show helpful fields."
 
     parts: list[str] = []
     for entry in defaults:
@@ -136,7 +140,7 @@ def build_contextual_guidance(
         if columns:
             parts.append(f"{dataset_label}: {', '.join(columns)}")
     if not parts:
-        return "No contextual columns saved yet. Configure preferences to show helpful fields with each result."
+        return "No contextual columns saved yet. Configure preferences to show helpful fields."
     return "No saved contextual columns yet. Start with: " + "; ".join(parts)
 
 
@@ -151,7 +155,11 @@ def _build_editor_rows(
     rows: list[dict[str, object]] = []
     for index, column_name in enumerate(selection, start=1):
         saved_column = saved_lookup.get(column_name)
-        label = saved_column.display_label if saved_column else option_labels.get(column_name, column_name)
+        label = (
+            saved_column.display_label
+            if saved_column
+            else option_labels.get(column_name, column_name)
+        )
         rows.append(
             {
                 "columnName": column_name,
@@ -192,18 +200,26 @@ def _render_preference_panel(
 
         available_columns = [entry for entry in catalog if entry.is_available]
         option_labels = {
-            entry.column_name: entry.display_label or entry.column_name for entry in available_columns
+            entry.column_name: entry.display_label or entry.column_name
+            for entry in available_columns
         }
         unavailable = [
             entry.display_label or entry.column_name for entry in catalog if not entry.is_available
         ]
         if unavailable:
             st.info(
-                "Unavailable columns currently filtered from selection: " + ", ".join(sorted(unavailable))
+                "Unavailable columns currently filtered from selection: "
+                + ", ".join(sorted(unavailable))
             )
 
-        default_selection = [column.column_name for column in snapshot.selected_columns] if snapshot else []
-        payload = state.get("local_preference_payload") if isinstance(state.get("local_preference_payload"), dict) else None
+        default_selection = (
+            [column.column_name for column in snapshot.selected_columns] if snapshot else []
+        )
+        payload = (
+            state.get("local_preference_payload")
+            if isinstance(state.get("local_preference_payload"), dict)
+            else None
+        )
         payload = payload if payload and payload.get("datasetId") == dataset["id"] else None
         hydrated = hydrate_local_preferences(
             state,
@@ -228,7 +244,11 @@ def _render_preference_panel(
 
         selection_list = list(selection)
 
-        max_default = snapshot.max_columns if snapshot else min(MAX_CONTEXTUAL_COLUMNS, max(3, len(option_labels) or 1))
+        max_default = (
+            snapshot.max_columns
+            if snapshot
+            else min(MAX_CONTEXTUAL_COLUMNS, max(3, len(option_labels) or 1))
+        )
         max_columns = st.slider(
             "Maximum contextual columns",
             min_value=1,
@@ -263,7 +283,10 @@ def _render_preference_panel(
 
         exceed_limit = len(selection_list) > max_columns
         if exceed_limit:
-            st.error(f"Selection exceeds the maximum allowed columns ({max_columns}). Remove columns or raise the limit.")
+            st.error(
+                f"Selection exceeds the maximum allowed columns ({max_columns}). "
+                "Remove columns or raise the limit."
+            )
 
         reset_key = f"column_preference_reset_{dataset['id']}"
         reset_flag_key = f"{reset_key}_pending"
@@ -277,7 +300,7 @@ def _render_preference_panel(
 
         if st.session_state.get(reset_flag_key):
             st.warning(
-                "Reset will clear saved contextual columns for this dataset. Confirm to restore defaults.",
+                "Reset clears saved contextual columns; confirm to restore defaults.",
                 icon="⚠️",
             )
             if st.button("Confirm Reset", type="primary", key=f"{reset_key}_confirm"):
@@ -329,7 +352,7 @@ def _render_preference_panel(
                 user_id=None,
                 selected_columns=selected_columns,
                 max_columns=max_columns,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
             try:
                 saved = preference_service.save_preference(snapshot_request)
@@ -338,7 +361,9 @@ def _render_preference_panel(
                 st.error(str(error))
             else:
                 repo.session.commit()
-                state["selected_columns"] = [column.column_name for column in saved.selected_columns]
+                state["selected_columns"] = [
+                    column.column_name for column in saved.selected_columns
+                ]
                 state["preference_status"] = "ready"
                 st.session_state["local_preference_payload"] = {
                     "datasetId": saved.dataset_id,
@@ -358,17 +383,22 @@ def _render_preference_panel(
                 }
                 try:
                     preference_service.mirror_preference(saved)
-                except Exception:
-                    pass
+                except Exception as error:
+                    LOGGER.warning("Failed to mirror preference: %s", error, exc_info=True)
                 st.success(
                     "Saved contextual columns: "
                     + ", ".join(column.column_name for column in saved.selected_columns),
                 )
+
+
 def _format_results(results: Sequence[SearchResult]) -> tuple[pd.DataFrame, list[str]]:
     if not results:
-        return pd.DataFrame(
-            columns=["Dataset", "Column", "Row", "Similarity", "Text", "Tags"],
-        ), []
+        return (
+            pd.DataFrame(
+                columns=["Dataset", "Column", "Row", "Similarity", "Text", "Tags"],
+            ),
+            [],
+        )
     contextual_order: list[str] = []
     contextual_labels: dict[str, str] = {}
     for result in results:
@@ -449,8 +479,10 @@ def _run_search(
     dataset_ids: list[str],
     columns: list[str],
     min_similarity: float,
-    limit: int,
-) -> tuple[list[SearchResult], list[dict[str, object]]]:
+    limit_per_mode: int,
+    offset_semantic: int,
+    offset_lexical: int,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
     session_factory = _get_session_factory()
     with session_scope(session_factory) as session:
         repo = MetadataRepository(session)
@@ -461,30 +493,36 @@ def _run_search(
             "streamlit.search.execute",
             dataset_count=len(dataset_ids) if dataset_ids else "all",
         ):
-            results = service.search(
+            response = service.search_dual(
                 query=query,
                 dataset_ids=dataset_ids or None,
                 column_names=columns or None,
                 min_similarity=min_similarity,
-                limit=limit,
+                limit_per_mode=limit_per_mode,
+                offset_semantic=offset_semantic,
+                offset_lexical=offset_lexical,
             )
         elapsed_ms = (time.perf_counter() - start) * 1000.0
+        all_results: list[SearchResult] = [
+            *response.get("semantic_results", []),
+            *response.get("lexical_results", []),
+        ]
         log_event(
             LOGGER,
             "streamlit.search.completed",
-            result_count=len(results),
+            result_count=len(all_results),
             min_similarity=min_similarity,
         )
         defaults = _load_contextual_defaults(
             repo,
-            dataset_ids or [result.dataset_id for result in results],
+            dataset_ids or [result.dataset_id for result in all_results],
         )
         try:
             analytics = AnalyticsClient()
             contextual_labels = sorted(
                 {
                     label
-                    for result in results
+                    for result in all_results
                     for label in result.metadata.get("contextual_labels", {}).values()
                 }
             )
@@ -492,15 +530,22 @@ def _run_search(
             dataset_hint = dataset_ids[0] if dataset_ids else None
             analytics.search_latency(elapsed_ms, dataset_id=dataset_hint, detail=detail)
             analytics.flush()
-        except Exception:
-            pass
-        return results, defaults
+        except Exception as error:
+            LOGGER.warning("Failed to record search analytics: %s", error, exc_info=True)
+        return response, defaults
 
 
 def main() -> None:
     state = ensure_session_defaults(st.session_state)
     st.title("Search Corpus")
-    st.caption("Run semantic search across ingested datasets with optional filters.")
+    st.caption(
+        "Run semantic (embeddings) and lexical search side by side with per-mode pagination "
+        "and contextual columns."
+    )
+
+    state.setdefault("semantic_offset", 0)
+    state.setdefault("lexical_offset", 0)
+    state.setdefault("auto_search", False)
 
     with st.form("search_prompt_form", clear_on_submit=False):
         st.markdown("Search prompt")
@@ -513,10 +558,18 @@ def main() -> None:
                 label_visibility="collapsed",
             )
         with action_col:
-            form_submitted = st.form_submit_button("Run Search", type="primary", use_container_width=True)
-    min_similarity = st.slider("Minimum similarity", min_value=0.0, max_value=1.0, value=0.6, step=0.05)
-    limit = st.slider("Maximum results", min_value=1, max_value=100, value=20, step=1)
+            form_submitted = st.form_submit_button(
+                "Run Search", type="primary", use_container_width=True
+            )
+    min_similarity = st.slider(
+        "Minimum similarity", min_value=0.0, max_value=1.0, value=0.6, step=0.05
+    )
+    limit_per_mode = st.slider("Results per mode", min_value=1, max_value=50, value=10, step=1)
     with st.expander("Similarity Legend", expanded=False):
+        st.markdown(
+            "Semantic and lexical tabs share this scale. Use the load-more buttons on each tab to "
+            "page results independently without resetting filters."
+        )
         st.dataframe(
             _style_similarity_legend(build_similarity_legend_table()),
             hide_index=True,
@@ -557,27 +610,47 @@ def main() -> None:
         key=column_key,
     )
 
+    if form_submitted:
+        state["semantic_offset"] = 0
+        state["lexical_offset"] = 0
     run_disabled = not query.strip()
+    should_search = (form_submitted or state.get("auto_search", False)) and not run_disabled
+
     if form_submitted and run_disabled:
         st.warning("Enter a search prompt before running a search.")
-    elif form_submitted and not run_disabled:
+    elif should_search:
         try:
-            results, defaults = _run_search(
+            response, defaults = _run_search(
                 query=query,
                 dataset_ids=selected_dataset_ids,
                 columns=list(selected_columns),
                 min_similarity=min_similarity,
-                limit=limit,
+                limit_per_mode=limit_per_mode,
+                offset_semantic=state["semantic_offset"],
+                offset_lexical=state["lexical_offset"],
             )
         except Exception as error:  # pragma: no cover - streamlit UI feedback
             LOGGER.exception("Search failed: %s", error)
             st.error(f"Search failed: {error}")
         else:
-            if not results:
+            state["auto_search"] = False
+            semantic_results: list[SearchResult] = response.get("semantic_results", [])
+            lexical_results: list[SearchResult] = response.get("lexical_results", [])
+            pagination = response.get("pagination", {})
+            fallback = response.get("fallback", {}) or {}
+            combined = semantic_results + lexical_results
+
+            if not combined:
                 st.warning("No results matched the current filters.")
             else:
-                st.success(f"Found {len(results)} matching queries.")
-                missing_columns = _collect_missing_columns(results)
+                st.success(f"Found {len(combined)} matching queries across modes.")
+                if not fallback.get("semantic_available", True):
+                    st.warning(
+                        fallback.get("message")
+                        or "Semantic results unavailable; showing lexical results only.",
+                        icon="⚠️",
+                    )
+                missing_columns = _collect_missing_columns(combined)
                 for dataset, columns in missing_columns.items():
                     st.info(
                         f"{dataset}: missing contextual columns {', '.join(columns)}. "
@@ -586,13 +659,42 @@ def main() -> None:
                     )
                 guidance = build_contextual_guidance(
                     defaults=defaults,
-                    has_preferences=any(result.metadata.get("contextual_labels") for result in results),
+                    has_preferences=any(
+                        result.metadata.get("contextual_labels") for result in combined
+                    ),
                 )
                 if guidance:
                     st.info(guidance)
-                result_df, similarity_colors = _format_results(results)
-                styled_results = _style_similarity_scores(result_df, similarity_colors)
-                st.dataframe(styled_results, width="stretch", hide_index=True)
+
+                tabs = st.tabs(["Semantic", "Lexical"])
+                mode_map = [
+                    ("semantic", semantic_results, tabs[0]),
+                    ("lexical", lexical_results, tabs[1]),
+                ]
+                for mode, results, container in mode_map:
+                    with container:
+                        if mode == "semantic" and not fallback.get("semantic_available", True):
+                            st.info(
+                                fallback.get("message")
+                                or "Semantic results unavailable; showing lexical only."
+                            )
+                        if not results:
+                            st.write("No results in this mode yet.")
+                            continue
+                        df, colors = _format_results(results)
+                        styled = _style_similarity_scores(df, colors)
+                        st.dataframe(styled, width="stretch", hide_index=True)
+                        page = pagination.get(mode, {})
+                        next_offset = page.get("next_offset")
+                        if next_offset is not None:
+                            label = f"Load more {mode} results"
+                            if st.button(label, key=f"{mode}_load_more"):
+                                state[f"{mode}_offset"] = next_offset
+                                state["auto_search"] = True
+                                st.experimental_rerun()
+
+    if not should_search:
+        state["auto_search"] = False
 
 
 if __name__ == "__main__":
