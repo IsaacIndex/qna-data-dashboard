@@ -1,0 +1,193 @@
+openapi: 3.0.1
+info:
+  title: Ingest Page Source Management API
+  version: "0.1.0"
+paths:
+  /api/groups:
+    get:
+      summary: List document groups with summary metadata
+      responses:
+        "200":
+          description: Groups returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentGroup"
+  /api/groups/{group_id}/sources:
+    get:
+      summary: List sources for a document group
+      parameters:
+        - in: path
+          name: group_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Sources returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceFile"
+    post:
+      summary: Upload source files to a group
+      parameters:
+        - in: path
+          name: group_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "202":
+          description: Upload accepted for validation/ingest
+        "400":
+          description: Validation failure (size/type)
+  /api/groups/{group_id}/sources/{source_id}:
+    delete:
+      summary: Delete a source file
+      parameters:
+        - in: path
+          name: group_id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: source_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted and removed from search/index
+        "409":
+          description: Cannot delete while embedding unless cancelled
+  /api/groups/{group_id}/sources/reembed:
+    post:
+      summary: Trigger re-embed for one or more sources
+      parameters:
+        - in: path
+          name: group_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_ids:
+                  type: array
+                  items: { type: string }
+      responses:
+        "202":
+          description: Jobs queued; returns job ids
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_ids:
+                    type: array
+                    items: { type: string }
+  /api/groups/{group_id}/embedding-jobs/{job_id}:
+    get:
+      summary: Get embedding job status
+      parameters:
+        - in: path
+          name: group_id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingJob"
+  /api/groups/{group_id}/preferences:
+    put:
+      summary: Save column/context preferences for a group
+      parameters:
+        - in: path
+          name: group_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ColumnPreferenceSet"
+      responses:
+        "200":
+          description: Preferences saved
+
+components:
+  schemas:
+    DocumentGroup:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        source_count: { type: integer }
+        last_updated_at: { type: string, format: date-time }
+    SourceFile:
+      type: object
+      properties:
+        id: { type: string }
+        document_group_id: { type: string }
+        filename: { type: string }
+        version_label: { type: string }
+        size_bytes: { type: integer }
+        mime_type: { type: string }
+        status: { type: string, enum: ["uploaded","validating","ready","failed","embedding","embedded"] }
+        added_by: { type: string }
+        added_at: { type: string, format: date-time }
+        last_updated_at: { type: string, format: date-time }
+        validation_error: { type: string }
+        extracted_columns:
+          type: array
+          items: { type: string }
+    ColumnPreferenceSet:
+      type: object
+      properties:
+        selected_columns:
+          type: array
+          items: { type: string }
+        contextual_fields:
+          type: array
+          items: { type: string }
+        updated_by: { type: string }
+        updated_at: { type: string, format: date-time }
+    EmbeddingJob:
+      type: object
+      properties:
+        id: { type: string }
+        document_group_id: { type: string }
+        source_file_ids:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: ["queued","processing","completed","failed","cancelled"] }
+        queue_position: { type: integer }
+        failure_reason: { type: string }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        run_duration_ms: { type: integer }
