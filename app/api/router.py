@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api import ingest_sources, group_preferences
 from app.db.metadata import (
     MetadataRepository,
     build_engine,
@@ -1015,5 +1016,8 @@ def create_app(
         dataset_filters = _split_csv(dataset_ids) or None
         summary = analytics_service.summarize_coverage(dataset_filters)
         return summary.to_dict()
+
+    app.include_router(ingest_sources.router)
+    app.include_router(group_preferences.router)
 
     return app

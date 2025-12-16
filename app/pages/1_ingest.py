@@ -51,8 +51,81 @@ from app.utils.session_state import (
     ensure_session_defaults,
     request_reset,
 )  # noqa: E402
+from app.services.ingest_storage import default_storage  # noqa: E402
+from app.services.embedding_queue import default_queue  # noqa: E402
+from app.utils.audit import record_audit  # noqa: E402
 
 LOGGER = get_logger(__name__)
+
+
+def _list_document_groups() -> list[str]:
+    root = default_storage.storage_root
+    groups = ["default"]
+    if root.exists():
+        for item in root.iterdir():
+            if item.is_dir() and not item.name.startswith("_"):
+                groups.append(item.name)
+    return sorted(set(groups))
+
+
+def _render_source_manager() -> tuple[str, list[str]]:
+    st.subheader("Source management")
+    groups = _list_document_groups()
+    group = st.selectbox("Document group", options=groups, index=0, key="ingest_group_select")
+
+    sources = default_storage.list_sources(group)
+    st.caption(f"{len(sources)} sources in '{group}'")
+    if sources:
+        st.dataframe(
+            [
+                {
+                    "Name": source.version_label,
+                    "Size (KB)": round(source.size_bytes / 1024, 1),
+                    "Status": source.status.value,
+                    "Added": source.added_at,
+                    "Columns": ", ".join(source.extracted_columns),
+                }
+                for source in sources
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+    files = st.file_uploader(
+        "Add sources (CSV/XLS/XLSX/Parquet)",
+        type=["csv", "xls", "xlsx", "parquet"],
+        accept_multiple_files=True,
+        key="ingest_source_uploader",
+    )
+    if files:
+        for uploaded in files:
+            try:
+                default_storage.save_upload(
+                    group,
+                    uploaded,
+                    filename=uploaded.name,
+                    mime_type=uploaded.type or "",
+                    added_by=None,
+                )
+                record_audit("ui.upload", "success", user=None, details={"group": group, "file": uploaded.name})
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Upload failed for {uploaded.name}: {exc}")
+        st.success("Uploads processed. Refreshing list...")
+        st.rerun()
+
+    selected_for_delete = st.multiselect(
+        "Delete sources",
+        options=[(source.id, source.version_label) for source in sources],
+        format_func=lambda item: item[1],
+        key="ingest_delete_select",
+    )
+    if selected_for_delete and st.button("Confirm delete selected", type="primary"):
+        for source_id, _label in selected_for_delete:
+            default_storage.delete_source(group, source_id)
+            record_audit("ui.delete", "success", user=None, details={"group": group, "source_id": source_id})
+        st.success("Selected sources deleted.")
+        st.rerun()
+
+    return group, [src.id for src in sources]
 
 
 @dataclass
@@ -152,6 +225,53 @@ def _preview_rows(
     return headers, rows
 
 
+def _render_reembed_controls(group_id: str, source_ids: list[str]) -> None:
+    st.subheader("Re-embed sources")
+    selected = st.multiselect("Select sources to re-embed", options=source_ids, key="reembed_select")
+    if st.button("Queue re-embed", type="primary", disabled=not selected):
+        job = default_queue.enqueue(group_id, selected, triggered_by=None)
+        record_audit("ui.reembed", "queued", user=None, details={"group": group_id, "job": job.id, "sources": len(selected)})
+        st.success(f"Queued re-embed job {job.id}")
+    active_jobs = [default_queue.get_status(group_id, job_id) for job_id in [job.id for job in default_queue._completed.get(group_id, {}).values()]]  # noqa: SLF001
+    if active_jobs:
+        st.write("Recent jobs")
+        st.dataframe(
+            [
+                {
+                    "Job": job.id,
+                    "Status": job.status.value,
+                    "Completed": job.completed_at,
+                    "Duration (ms)": job.run_duration_ms,
+                }
+                for job in active_jobs
+                if job
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+
+def _render_preferences(group_id: str, sources: list[str]) -> None:
+    st.subheader("Group preferences")
+    available_columns: list[str] = []
+    for source in default_storage.list_sources(group_id):
+        available_columns.extend(list(source.extracted_columns))
+    available_columns = sorted({col for col in available_columns if col})
+    prefs = st.session_state.setdefault("ingest_preferences", {})
+    defaults = prefs.get(group_id, [])
+    selection = st.multiselect(
+        "Contextual columns",
+        options=available_columns,
+        default=defaults,
+        help="Selections saved per group",
+    )
+    if st.button("Save preferences", type="primary"):
+        prefs[group_id] = selection
+        st.session_state["ingest_preferences"] = prefs
+        record_audit("ui.preferences", "saved", user=None, details={"group": group_id, "count": len(selection)})
+        st.success("Preferences saved for this group.")
+
+
 def _collect_sheet_schemas(
     uploaded_file: UploadedFile, delimiter: str | None = None
 ) -> list[_UploadSheet]:
@@ -244,37 +364,107 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
         return
 
     st.subheader("Sheet Source Catalog")
+    catalog_rows: list[dict[str, object]] = []
     for bundle in bundles:
-        st.markdown(
-            f"**{bundle.display_name}** — {bundle.sheet_count} sheets, "
-            f"status **{bundle.ingestion_status.value}**"
-        )
         sheets = repo.list_sheet_sources(bundle_id=bundle.id)
         if not sheets:
-            st.write("- _No sheet sources registered yet._")
             continue
         embedding_counts = repo.get_sheet_embedding_counts(sheet_ids=[sheet.id for sheet in sheets])
         for sheet in sheets:
-            visibility = (
-                "Hidden Opt-In" if sheet.visibility_state.value == "hidden_opt_in" else "Visible"
-            )
-            status = sheet.status.value
-            last_refreshed = (
-                sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else "N/A"
-            )
             vector_count = embedding_counts.get(sheet.id, 0)
-            if vector_count:
-                embedding_label = f"{vector_count:,} embeddings"
-            else:
-                embedding_label = "⚠️ no embeddings yet"
-            message = (
-                f"- ``{sheet.display_label}`` ({visibility}, status {status}, "
-                f"{sheet.row_count} rows, refreshed {last_refreshed}, {embedding_label})"
+            status_value = sheet.status.value
+            status_label = status_value.replace("_", " ").title()
+            visibility_label = (
+                "Hidden opt-in" if sheet.visibility_state.value == "hidden_opt_in" else "Visible"
             )
-            if sheet.status != SheetStatus.ACTIVE:
-                st.warning(message)
-            else:
-                st.write(message)
+            needs_attention = sheet.status != SheetStatus.ACTIVE or vector_count == 0
+            catalog_rows.append(
+                {
+                    "Bundle": bundle.display_name,
+                    "Sheet": sheet.display_label,
+                    "Visibility": visibility_label,
+                    "Status": status_label,
+                    "Rows": sheet.row_count,
+                    "Embeddings": vector_count,
+                    "Last refreshed": (
+                        sheet.last_refreshed_at.isoformat() if sheet.last_refreshed_at else "N/A"
+                    ),
+                    "_status_value": status_value,
+                    "_needs_attention": needs_attention,
+                    "_text_blob": f"{bundle.display_name} {sheet.display_label} {visibility_label}".lower(),
+                }
+            )
+
+    if not catalog_rows:
+        st.info("Source bundles exist but no sheet sources have been registered yet.")
+        return
+
+    attention_total = sum(1 for row in catalog_rows if row["_needs_attention"])
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Bundles", len(bundles))
+    col_b.metric("Sheet sources", len(catalog_rows))
+    col_c.metric("Needs attention", attention_total)
+
+    st.caption("Use the interactive controls below to search, filter, and spotlight sheets quickly.")
+
+    search_query = st.text_input(
+        "Search bundles or sheets",
+        placeholder="Type a bundle or sheet name…",
+        key="sheet_catalog_search",
+    ).strip()
+    status_options = sorted({row["Status"] for row in catalog_rows})
+    selected_statuses = st.multiselect(
+        "Status filter",
+        options=status_options,
+        default=status_options,
+        key="sheet_catalog_status_filter",
+    )
+    attention_only = st.checkbox(
+        "Show only sheets needing attention (inactive or missing embeddings)",
+        key="sheet_catalog_attention_only",
+        value=False,
+    )
+
+    lowered_query = search_query.lower()
+    filtered_rows: list[dict[str, object]] = []
+    for row in catalog_rows:
+        if selected_statuses and row["Status"] not in selected_statuses:
+            continue
+        if lowered_query and lowered_query not in row["_text_blob"]:
+            continue
+        if attention_only and not row["_needs_attention"]:
+            continue
+        filtered_rows.append(row)
+
+    filtered_rows.sort(key=lambda row: (row["Bundle"].lower(), row["Sheet"].lower()))
+    display_rows = [
+        {
+            "Bundle": row["Bundle"],
+            "Sheet": row["Sheet"],
+            "Visibility": row["Visibility"],
+            "Status": row["Status"],
+            "Rows": row["Rows"],
+            "Embeddings": row["Embeddings"],
+            "Last refreshed": row["Last refreshed"],
+        }
+        for row in filtered_rows
+    ]
+
+    if not display_rows:
+        st.warning("No sheet sources match the current filters.")
+        return
+
+    st.caption(f"Showing {len(display_rows)} of {len(catalog_rows)} sheet sources.")
+    st.data_editor(
+        display_rows,
+        hide_index=True,
+        use_container_width=True,
+        disabled=True,
+        column_config={
+            "Embeddings": st.column_config.NumberColumn(format="%d", help="Embeddings currently stored"),
+            "Rows": st.column_config.NumberColumn(format="%d"),
+        },
+    )
 
 
 def run_ingestion(
@@ -329,6 +519,10 @@ def main() -> None:
         "and opt in hidden tabs with audit logging."
     )
     _render_persistence_status()
+    group_id, source_ids = _render_source_manager()
+    _render_reembed_controls(group_id, source_ids)
+    _render_preferences(group_id, source_ids)
+    st.divider()
 
     state = ensure_session_defaults()
     reset_flag = "ingest_reset_pending"

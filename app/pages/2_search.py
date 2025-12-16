@@ -318,7 +318,7 @@ def _render_preference_panel(
                     st.session_state.pop("local_preference_payload", None)
                     st.session_state.pop(reset_flag_key, None)
                     st.success("Restored default column view for this dataset.")
-                    st.experimental_rerun()
+                    st.rerun()
 
         save_disabled = not selection_list or exceed_limit
         if st.button(
@@ -691,7 +691,7 @@ def main() -> None:
                             if st.button(label, key=f"{mode}_load_more"):
                                 state[f"{mode}_offset"] = next_offset
                                 state["auto_search"] = True
-                                st.experimental_rerun()
+                                st.rerun()
 
     if not should_search:
         state["auto_search"] = False

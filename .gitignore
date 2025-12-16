@@ -71,6 +71,7 @@ local.settings.json
 # ------------------------
 data/raw/
 data/chromadb/
+data/ingest_sources/
 data/*.db
 data/**/*.db
 data/logs/
