@@ -32,6 +32,7 @@ __pycache__/
 dist/
 build/
 .pytest_cache
+.ruff_cache/
 
 # ------------------------
 # Logs & runtime files

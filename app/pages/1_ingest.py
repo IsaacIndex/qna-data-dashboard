@@ -88,7 +88,7 @@ def _render_source_manager() -> tuple[str, list[str]]:
                 for source in sources
             ],
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
     files = st.file_uploader(
         "Add sources (CSV/XLS/XLSX/Parquet)",
@@ -228,7 +228,7 @@ def _preview_rows(
 def _render_reembed_controls(group_id: str, source_ids: list[str]) -> None:
     st.subheader("Re-embed sources")
     selected = st.multiselect("Select sources to re-embed", options=source_ids, key="reembed_select")
-    if st.button("Queue re-embed", type="primary", disabled=not selected):
+    if st.button("Queue re-embed", type="primary", disabled=not selected, width="stretch"):
         job = default_queue.enqueue(group_id, selected, triggered_by=None)
         record_audit("ui.reembed", "queued", user=None, details={"group": group_id, "job": job.id, "sources": len(selected)})
         st.success(f"Queued re-embed job {job.id}")
@@ -247,7 +247,7 @@ def _render_reembed_controls(group_id: str, source_ids: list[str]) -> None:
                 if job
             ],
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
 
@@ -458,7 +458,7 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
     st.data_editor(
         display_rows,
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         disabled=True,
         column_config={
             "Embeddings": st.column_config.NumberColumn(format="%d", help="Embeddings currently stored"),

@@ -559,7 +559,7 @@ def main() -> None:
             )
         with action_col:
             form_submitted = st.form_submit_button(
-                "Run Search", type="primary", use_container_width=True
+                "Run Search", type="primary", width="stretch"
             )
     min_similarity = st.slider(
         "Minimum similarity", min_value=0.0, max_value=1.0, value=0.6, step=0.05
@@ -573,7 +573,7 @@ def main() -> None:
         st.dataframe(
             _style_similarity_legend(build_similarity_legend_table()),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
     with session_scope(_get_session_factory()) as session:

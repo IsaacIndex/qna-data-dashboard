@@ -13,6 +13,9 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api import ingest_sources, group_preferences
+from app.api.routes.ingest import router as ingest_router
+from app.api.routes.legacy import router as legacy_router
+from app.api.routes.reembed import router as reembed_router
 from app.db.metadata import (
     MetadataRepository,
     build_engine,
@@ -1018,6 +1021,9 @@ def create_app(
         return summary.to_dict()
 
     app.include_router(ingest_sources.router)
+    app.include_router(ingest_router)
+    app.include_router(reembed_router)
+    app.include_router(legacy_router)
     app.include_router(group_preferences.router)
 
     return app

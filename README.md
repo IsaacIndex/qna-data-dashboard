@@ -7,6 +7,7 @@ Local-first Streamlit dashboard for exploring query coverage, semantic search qu
 - Dual-mode search that runs semantic embeddings (Chroma-backed) alongside lexical SequenceMatcher results with per-mode pagination.
 - Query Builder that previews joined sheets, flags conflicts, and helps analysts validate trial joins before committing.
 - Coverage Analytics page that materializes redundancy metrics, cluster summaries, and diversity scores with one-click refreshes.
+- Unified source management: canonical UUID mapping across tmp files, sheets, and embeddings with human-readable labels, server-backed infinite scroll, bulk grouping/status updates, and legacy reinsertion with audit logging.
 - FastAPI backend exposing ingestion, search, and analytics endpoints for automation-friendly workflows.
 
 ## Quick Start
@@ -38,6 +39,40 @@ poetry run qna-dashboard
 ```
 
 On first launch the app ensures `./data/` exists with subdirectories for raw uploads, logs, and (optionally) embeddings. Use the left sidebar to navigate between ingestion, search, query builder, and analytics.
+
+### Unified source management (UI)
+- In the ingest tab, open **Unified source inventory**. Filters default to “All” values; use the dropdowns to constrain dataset/type/status/group, then “Load more sources” to paginate server-side.
+- Use **Bulk actions** to apply groups or statuses with per-item success/failure feedback (conflicts do not block other updates).
+- Use **Re-embed sources** to queue jobs by label (dataset/type shown for disambiguation). UUIDs stay hidden in the UI; statuses refresh automatically after queueing.
+- Legacy gaps: run **Legacy reconcile** (UI or API) to reinsert missing files with audit entries and conflict prompts before overwriting anything.
+- Legacy sheet catalog backfill: running **Legacy reconcile** also backfills historical Sheet Source Catalog entries into the `catalog` document group so Source Management/unified views match the catalog. These backfilled entries are tagged `sheet-catalog` and pick up bundle status/columns without requiring re-upload.
+
+### Unified source management (API)
+Start the FastAPI server if not already running:
+```bash
+poetry run uvicorn app.api.main:app --reload
+```
+
+Common calls:
+```bash
+# List sources with filters and pagination
+curl "http://localhost:8000/sources?limit=25&dataset=analytics&type=sheet"
+
+# Bulk update statuses and/or groups
+curl -X POST http://localhost:8000/sources/bulk \
+  -H "Content-Type: application/json" \
+  -d '{"uuids":["<uuid-1>","<uuid-2>"],"status":"archived","groups":["finance","reviewed"]}'
+
+# Queue a re-embed (UI still uses labels)
+curl -X POST http://localhost:8000/sources/reembed \
+  -H "Content-Type: application/json" \
+  -d '{"uuid":"<source-uuid>"}'
+
+# Reinsert legacy sources (dry-run to inspect conflicts first)
+curl -X POST http://localhost:8000/sources/reconcile-legacy \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true}'
+```
 
 ## Recommended Workflow
 1. **Ingest Datasets** – upload CSV/Excel files, choose relevant columns (unique across all sheets), and kick off embeddings. Hidden sheets can be opted in per bundle.

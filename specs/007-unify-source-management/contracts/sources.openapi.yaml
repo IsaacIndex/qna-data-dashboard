@@ -1,0 +1,167 @@
+openapi: 3.0.3
+info:
+  title: Unified Source Management API
+  version: "0.1.0"
+paths:
+  /sources:
+    get:
+      summary: List sources with server-side filter/sort and cursor pagination
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [new, ingesting, ready, archived, error] }
+        - in: query
+          name: type
+          schema: { type: string, enum: [tmp_file, sheet, embedding] }
+        - in: query
+          name: group
+          schema: { type: string }
+        - in: query
+          name: dataset
+          schema: { type: string }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [label, dataset, status, last_updated] }
+      responses:
+        "200":
+          description: Paginated sources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourcePage"
+  /sources/{uuid}/status:
+    post:
+      summary: Update status for a single source
+      parameters:
+        - in: path
+          name: uuid
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [new, ingesting, ready, archived, error]
+      responses:
+        "200": { description: Status updated }
+  /sources/bulk:
+    post:
+      summary: Bulk update status and groups for multiple sources
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                uuids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  minItems: 1
+                status:
+                  type: string
+                  enum: [new, ingesting, ready, archived, error]
+                  nullable: true
+                groups:
+                  type: array
+                  items: { type: string }
+                  nullable: true
+      responses:
+        "200":
+          description: Per-item results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResult"
+  /sources/reembed:
+    post:
+      summary: Trigger re-embed for a source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uuid]
+              properties:
+                uuid: { type: string, format: uuid }
+      responses:
+        "202": { description: Re-embed enqueued }
+  /sources/reconcile-legacy:
+    post:
+      summary: Reinsert missing legacy sources into data/ingest_sources
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Reinsertion results with conflicts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyReconcileResult"
+
+components:
+  schemas:
+    Source:
+      type: object
+      properties:
+        uuid: { type: string, format: uuid }
+        label: { type: string }
+        dataset: { type: string }
+        type: { type: string, enum: [tmp_file, sheet, embedding] }
+        status: { type: string, enum: [new, ingesting, ready, archived, error] }
+        groups:
+          type: array
+          items: { type: string }
+        last_updated: { type: string, format: date-time }
+        legacy: { type: boolean }
+    SourcePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+        next_cursor: { type: string, nullable: true }
+    BulkResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              uuid: { type: string, format: uuid }
+              status: { type: string }
+              error: { type: string, nullable: true }
+    LegacyReconcileResult:
+      type: object
+      properties:
+        reinserted:
+          type: array
+          items: { type: string, format: uuid }
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              legacy_id: { type: string }
+              reason: { type: string }
+              suggested_action: { type: string }
