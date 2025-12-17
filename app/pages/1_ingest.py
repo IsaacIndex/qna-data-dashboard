@@ -51,6 +51,7 @@ from app.utils.session_state import (
     ensure_session_defaults,
     request_reset,
 )  # noqa: E402
+from app.services.ingest_models import SourceFile  # noqa: E402
 from app.services.ingest_storage import default_storage  # noqa: E402
 from app.services.embedding_queue import default_queue  # noqa: E402
 from app.utils.audit import record_audit  # noqa: E402
@@ -68,12 +69,12 @@ def _list_document_groups() -> list[str]:
     return sorted(set(groups))
 
 
-def _render_source_manager() -> tuple[str, list[str]]:
+def _render_source_manager() -> tuple[str, list[SourceFile]]:
     st.subheader("Source management")
     groups = _list_document_groups()
     group = st.selectbox("Document group", options=groups, index=0, key="ingest_group_select")
 
-    sources = default_storage.list_sources(group)
+    sources: list[SourceFile] = default_storage.list_sources(group)
     st.caption(f"{len(sources)} sources in '{group}'")
     if sources:
         st.dataframe(
@@ -125,7 +126,7 @@ def _render_source_manager() -> tuple[str, list[str]]:
         st.success("Selected sources deleted.")
         st.rerun()
 
-    return group, [src.id for src in sources]
+    return group, sources
 
 
 @dataclass
@@ -225,12 +226,24 @@ def _preview_rows(
     return headers, rows
 
 
-def _render_reembed_controls(group_id: str, source_ids: list[str]) -> None:
+def _render_reembed_controls(group_id: str, sources: list[SourceFile]) -> None:
     st.subheader("Re-embed sources")
-    selected = st.multiselect("Select sources to re-embed", options=source_ids, key="reembed_select")
-    if st.button("Queue re-embed", type="primary", disabled=not selected, width="stretch"):
-        job = default_queue.enqueue(group_id, selected, triggered_by=None)
-        record_audit("ui.reembed", "queued", user=None, details={"group": group_id, "job": job.id, "sources": len(selected)})
+    options = [(source.id, source.version_label) for source in sources]
+    selected = st.multiselect(
+        "Select sources to re-embed",
+        options=options,
+        format_func=lambda item: f"{item[1]} ({item[0]})",
+        key="reembed_select",
+    )
+    selected_ids = [item[0] for item in selected]
+    if st.button("Queue re-embed", type="primary", disabled=not selected_ids, width="stretch"):
+        job = default_queue.enqueue(group_id, selected_ids, triggered_by=None)
+        record_audit(
+            "ui.reembed",
+            "queued",
+            user=None,
+            details={"group": group_id, "job": job.id, "sources": len(selected_ids)},
+        )
         st.success(f"Queued re-embed job {job.id}")
     active_jobs = [default_queue.get_status(group_id, job_id) for job_id in [job.id for job in default_queue._completed.get(group_id, {}).values()]]  # noqa: SLF001
     if active_jobs:
@@ -251,10 +264,10 @@ def _render_reembed_controls(group_id: str, source_ids: list[str]) -> None:
         )
 
 
-def _render_preferences(group_id: str, sources: list[str]) -> None:
+def _render_preferences(group_id: str, sources: list[SourceFile]) -> None:
     st.subheader("Group preferences")
     available_columns: list[str] = []
-    for source in default_storage.list_sources(group_id):
+    for source in sources:
         available_columns.extend(list(source.extracted_columns))
     available_columns = sorted({col for col in available_columns if col})
     prefs = st.session_state.setdefault("ingest_preferences", {})
@@ -519,9 +532,9 @@ def main() -> None:
         "and opt in hidden tabs with audit logging."
     )
     _render_persistence_status()
-    group_id, source_ids = _render_source_manager()
-    _render_reembed_controls(group_id, source_ids)
-    _render_preferences(group_id, source_ids)
+    group_id, sources = _render_source_manager()
+    _render_reembed_controls(group_id, sources)
+    _render_preferences(group_id, sources)
     st.divider()
 
     state = ensure_session_defaults()
