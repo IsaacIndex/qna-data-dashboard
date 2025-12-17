@@ -19,7 +19,7 @@ jobs:
           cache: "poetry"
 
       - name: Install Poetry
-        run: pip install poetry
+        run: pipx install poetry
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-ansi
