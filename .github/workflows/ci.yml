@@ -19,7 +19,11 @@ jobs:
           cache: "poetry"
 
       - name: Install Poetry
-        run: pipx install poetry
+        run: |
+          python -m pip install --upgrade pip pipx
+          python -m pipx ensurepath
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pipx install poetry
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-ansi
