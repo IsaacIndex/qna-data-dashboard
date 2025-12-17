@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from app.utils.config import get_data_root
 from app.utils.logging import get_logger
@@ -18,7 +19,9 @@ class AuditLogService:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.logger = get_logger(__name__)
 
-    def record_legacy_reinsertion(self, *, source_uuid: str, outcome: str, conflict: bool) -> dict[str, Any]:
+    def record_legacy_reinsertion(
+        self, *, source_uuid: str, outcome: str, conflict: bool
+    ) -> dict[str, Any]:
         return self._record(
             "legacy.reinsert",
             {
@@ -28,7 +31,9 @@ class AuditLogService:
             },
         )
 
-    def record_bulk_action(self, *, uuids: Sequence[str], outcome: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    def record_bulk_action(
+        self, *, uuids: Sequence[str], outcome: str, details: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         payload = {"uuids": list(uuids), "outcome": outcome}
         if details:
             payload.update(details)

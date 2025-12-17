@@ -25,9 +25,9 @@ def test_emit_ingest_timing_prefixes_event() -> None:
 
 
 def test_measure_ingest_wraps_block(monkeypatch) -> None:
-    calls: list[dict] = []
+    calls: list[dict[str, object]] = []
 
-    def _mock_emit(event: str, *, elapsed_ms: float, **fields) -> dict:
+    def _mock_emit(event: str, *, elapsed_ms: float, **fields: object) -> dict[str, object]:
         payload = {"event": event, "elapsed_ms": elapsed_ms, **fields}
         calls.append(payload)
         return payload

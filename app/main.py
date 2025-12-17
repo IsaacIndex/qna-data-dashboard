@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.utils.config import get_chroma_persist_dir, get_data_root
+from app.utils.config import get_chroma_persist_dir, get_data_root  # noqa: E402
 
 APP_TITLE = "Local Query Coverage Analytics"
 

@@ -34,7 +34,10 @@ from app.services.chroma_client import (  # noqa: E402
     get_chroma_client,
     get_chroma_runtime_state,
 )
+from app.services.embedding_queue import default_queue  # noqa: E402
 from app.services.embeddings import EmbeddingService  # noqa: E402
+from app.services.ingest_models import SourceFile  # noqa: E402
+from app.services.ingest_storage import default_storage  # noqa: E402
 from app.services.ingestion import (  # noqa: E402
     BundleIngestionOptions,
     HiddenSheetPolicy,
@@ -43,6 +46,7 @@ from app.services.ingestion import (  # noqa: E402
     build_column_picker_options,
 )
 from app.services.preferences import persist_column_selection  # noqa: E402
+from app.utils.audit import record_audit  # noqa: E402
 from app.utils.caching import cache_resource  # noqa: E402
 from app.utils.config import get_data_root  # noqa: E402
 from app.utils.logging import get_logger, log_event, log_timing  # noqa: E402
@@ -51,10 +55,6 @@ from app.utils.session_state import (
     ensure_session_defaults,
     request_reset,
 )  # noqa: E402
-from app.services.ingest_models import SourceFile  # noqa: E402
-from app.services.ingest_storage import default_storage  # noqa: E402
-from app.services.embedding_queue import default_queue  # noqa: E402
-from app.utils.audit import record_audit  # noqa: E402
 
 LOGGER = get_logger(__name__)
 
@@ -107,7 +107,12 @@ def _render_source_manager() -> tuple[str, list[SourceFile]]:
                     mime_type=uploaded.type or "",
                     added_by=None,
                 )
-                record_audit("ui.upload", "success", user=None, details={"group": group, "file": uploaded.name})
+                record_audit(
+                    "ui.upload",
+                    "success",
+                    user=None,
+                    details={"group": group, "file": uploaded.name},
+                )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Upload failed for {uploaded.name}: {exc}")
         st.success("Uploads processed. Refreshing list...")
@@ -122,7 +127,9 @@ def _render_source_manager() -> tuple[str, list[SourceFile]]:
     if selected_for_delete and st.button("Confirm delete selected", type="primary"):
         for source_id, _label in selected_for_delete:
             default_storage.delete_source(group, source_id)
-            record_audit("ui.delete", "success", user=None, details={"group": group, "source_id": source_id})
+            record_audit(
+                "ui.delete", "success", user=None, details={"group": group, "source_id": source_id}
+            )
         st.success("Selected sources deleted.")
         st.rerun()
 
@@ -245,7 +252,10 @@ def _render_reembed_controls(group_id: str, sources: list[SourceFile]) -> None:
             details={"group": group_id, "job": job.id, "sources": len(selected_ids)},
         )
         st.success(f"Queued re-embed job {job.id}")
-    active_jobs = [default_queue.get_status(group_id, job_id) for job_id in [job.id for job in default_queue._completed.get(group_id, {}).values()]]  # noqa: SLF001
+    active_jobs = [
+        default_queue.get_status(group_id, job_id)
+        for job_id in [job.id for job in default_queue._completed.get(group_id, {}).values()]
+    ]  # noqa: SLF001
     if active_jobs:
         st.write("Recent jobs")
         st.dataframe(
@@ -281,7 +291,12 @@ def _render_preferences(group_id: str, sources: list[SourceFile]) -> None:
     if st.button("Save preferences", type="primary"):
         prefs[group_id] = selection
         st.session_state["ingest_preferences"] = prefs
-        record_audit("ui.preferences", "saved", user=None, details={"group": group_id, "count": len(selection)})
+        record_audit(
+            "ui.preferences",
+            "saved",
+            user=None,
+            details={"group": group_id, "count": len(selection)},
+        )
         st.success("Preferences saved for this group.")
 
 
@@ -404,7 +419,9 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
                     ),
                     "_status_value": status_value,
                     "_needs_attention": needs_attention,
-                    "_text_blob": f"{bundle.display_name} {sheet.display_label} {visibility_label}".lower(),
+                    "_text_blob": (
+                        f"{bundle.display_name} {sheet.display_label} {visibility_label}".lower()
+                    ),
                 }
             )
 
@@ -418,7 +435,9 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
     col_b.metric("Sheet sources", len(catalog_rows))
     col_c.metric("Needs attention", attention_total)
 
-    st.caption("Use the interactive controls below to search, filter, and spotlight sheets quickly.")
+    st.caption(
+        "Use the interactive controls below to search, filter, and spotlight sheets quickly."
+    )
 
     search_query = st.text_input(
         "Search bundles or sheets",
@@ -474,7 +493,9 @@ def _render_sheet_catalog(repo: MetadataRepository) -> None:
         width="stretch",
         disabled=True,
         column_config={
-            "Embeddings": st.column_config.NumberColumn(format="%d", help="Embeddings currently stored"),
+            "Embeddings": st.column_config.NumberColumn(
+                format="%d", help="Embeddings currently stored"
+            ),
             "Rows": st.column_config.NumberColumn(format="%d"),
         },
     )

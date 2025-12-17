@@ -14,7 +14,9 @@ def _write_index(path: Path, entries: list[dict]) -> None:
     path.write_text(json.dumps(entries, indent=2, default=str))
 
 
-def test_list_sources_maps_existing_and_legacy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_sources_maps_existing_and_legacy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     data_root = tmp_path
     ingest_root = data_root / "ingest_sources" / "group1"
     ingest_root.mkdir(parents=True, exist_ok=True)

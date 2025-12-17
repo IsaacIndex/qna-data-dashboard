@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Mapping, Sequence
 
 from app.ingest.components.base_filters import build_filter_options
 from app.ingest.status_sync import apply_status_overrides, merge_sources_by_uuid
@@ -62,7 +62,11 @@ class SourceService:
         return SourcePage(items=items, next_cursor=next_cursor)
 
     def build_filter_options(self, sources: Sequence[Source] | None = None) -> dict[str, list[str]]:
-        pool = list(sources) if sources is not None else merge_sources_by_uuid(self.repository.list_sources())
+        pool = (
+            list(sources)
+            if sources is not None
+            else merge_sources_by_uuid(self.repository.list_sources())
+        )
         return build_filter_options(pool)
 
     # ---- helpers ----
@@ -98,7 +102,9 @@ class SourceService:
         key = sort or "label"
         valid_sorts = {"label", "dataset", "status", "last_updated", "group"}
         if key not in valid_sorts:
-            raise ValueError(f"Unsupported sort '{key}'. Expected one of: {', '.join(sorted(valid_sorts))}.")
+            raise ValueError(
+                f"Unsupported sort '{key}'. Expected one of: {', '.join(sorted(valid_sorts))}."
+            )
 
         def _sort_key(source: Source) -> tuple:
             if key == "dataset":
@@ -118,7 +124,9 @@ class SourceService:
 
         return sorted(sources, key=_sort_key)
 
-    def _paginate(self, sources: Sequence[Source], cursor: str | None, limit: int) -> tuple[list[Source], str | None]:
+    def _paginate(
+        self, sources: Sequence[Source], cursor: str | None, limit: int
+    ) -> tuple[list[Source], str | None]:
         try:
             offset = int(cursor) if cursor else 0
         except ValueError as error:

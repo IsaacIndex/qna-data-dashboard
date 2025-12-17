@@ -19,7 +19,9 @@ def build_client() -> TestClient:
 def test_get_sources_supports_filters_sort_and_cursor(tmp_path: Path, monkeypatch) -> None:
     seed = seed_mixed_source_indexes(tmp_path)
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
-    expected = sorted([source.label for source in SourceRepository(data_root=tmp_path).list_sources()])
+    expected = sorted(
+        [source.label for source in SourceRepository(data_root=tmp_path).list_sources()]
+    )
 
     client = build_client()
 

@@ -31,7 +31,10 @@ def test_unified_list_deduplicates_and_syncs_statuses(tmp_path: Path, monkeypatc
     assert any(row["legacy"] is True for row in rows)
 
     synced = apply_status_overrides(page.items, {conflict_uuid: SourceStatus.archived})
-    assert next(source for source in synced if source.uuid == conflict_uuid).status is SourceStatus.archived
+    assert (
+        next(source for source in synced if source.uuid == conflict_uuid).status
+        is SourceStatus.archived
+    )
 
     filters = service.build_filter_options(page.items)
     assert set(filters["datasets"]) == {"sales", "ml"}

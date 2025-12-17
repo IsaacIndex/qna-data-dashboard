@@ -59,7 +59,12 @@ def test_reconcile_creates_missing_file_and_updates_index(tmp_path: Path, monkey
     assert restored_path.exists()
 
     # find the legacy record (exclude any catalog backfill)
-    legacy_uuid = next(uuid for uuid in result.reinserted if repository.get(uuid) and str(restored_path) in str(repository.get(uuid).metadata.get("path", "")))
+    legacy_uuid = next(
+        uuid
+        for uuid in result.reinserted
+        if repository.get(uuid)
+        and str(restored_path) in str(repository.get(uuid).metadata.get("path", ""))
+    )
     source = repository.get(legacy_uuid)
     assert isinstance(source, Source)
     assert source.type is SourceType.sheet

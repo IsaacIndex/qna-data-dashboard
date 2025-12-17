@@ -4,8 +4,8 @@ from collections.abc import Sequence
 
 import streamlit as st
 
-from app.ingest.components.accessibility import apply_accessibility_baseline
 from app.embeddings.service import ReembedService
+from app.ingest.components.accessibility import apply_accessibility_baseline
 from app.models.source import Source
 from app.services.source_service import SourceService
 
@@ -36,7 +36,9 @@ def render_reembed_panel(
 
     apply_accessibility_baseline()
     st.subheader("Re-embed sources with readable labels")
-    page = service.list_sources(limit=page_limit, sort="label", status_overrides=jobs.status_overrides)
+    page = service.list_sources(
+        limit=page_limit, sort="label", status_overrides=jobs.status_overrides
+    )
     options = build_reembed_options(page.items)
 
     if not options:
@@ -50,12 +52,18 @@ def render_reembed_panel(
         index=0,
         help="Options list human-readable labels; press Enter to open and arrow keys to navigate.",
     )
-    selected_uuid = next((opt["uuid"] for opt in options if opt["displayLabel"] == selected_label), None)
+    selected_uuid = next(
+        (opt["uuid"] for opt in options if opt["displayLabel"] == selected_label), None
+    )
 
     if selected_label:
-        st.caption("Options show dataset and type to disambiguate similar names. UUIDs stay hidden.")
+        st.caption(
+            "Options show dataset and type to disambiguate similar names. UUIDs stay hidden."
+        )
 
-    if selected_uuid and st.button("Confirm re-embed", type="primary", help="Queue a re-embed job for the selected source."):
+    if selected_uuid and st.button(
+        "Confirm re-embed", type="primary", help="Queue a re-embed job for the selected source."
+    ):
         job = jobs.enqueue(selected_uuid)
         st.session_state["reembed_job_id"] = job.id
         st.success(f"Queued re-embed for {selected_label}")
@@ -67,7 +75,9 @@ def render_reembed_panel(
             st.info(f"Job {job.id}: {job.status}")
             if job.status == "completed":
                 st.success("Re-embed finished. Refreshing statuses.")
-        refreshed = service.list_sources(limit=page_limit, sort="label", status_overrides=jobs.status_overrides)
+        refreshed = service.list_sources(
+            limit=page_limit, sort="label", status_overrides=jobs.status_overrides
+        )
         refreshed_map = {source.uuid: source.status.value for source in refreshed.items}
         if selected_uuid and selected_uuid in refreshed_map:
             st.caption(f"Current status for selected source: {refreshed_map[selected_uuid]}")

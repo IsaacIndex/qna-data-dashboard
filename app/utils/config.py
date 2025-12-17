@@ -80,7 +80,9 @@ def load_ingest_config(data_root: Path | None = None) -> IngestConfig:
     max_bytes = int(os.getenv(INGEST_MAX_BYTES_ENV, max_bytes_default))
     allowed_env = os.getenv(INGEST_ALLOWED_TYPES_ENV)
     if allowed_env:
-        allowed_types = tuple(part.strip().lower() for part in allowed_env.split(",") if part.strip())
+        allowed_types = tuple(
+            part.strip().lower() for part in allowed_env.split(",") if part.strip()
+        )
     else:
         allowed_types = ("csv", "xlsx", "xls", "parquet")
     reembed_concurrency = int(os.getenv(INGEST_CONCURRENCY_ENV, 3))

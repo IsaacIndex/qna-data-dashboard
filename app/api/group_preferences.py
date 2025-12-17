@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated
 
@@ -43,5 +42,10 @@ def save_preferences(
     selected = payload.get("selected_columns") or payload.get("selectedColumns") or []
     contextual = payload.get("contextual_fields") or payload.get("contextualFields") or []
     data = storage.save_preferences(group_id, selected, contextual)
-    record_audit("preferences.save", "success", user=None, details={"group": group_id, "count": len(selected)})
+    record_audit(
+        "preferences.save",
+        "success",
+        user=None,
+        details={"group": group_id, "count": len(selected)},
+    )
     return data

@@ -16,9 +16,15 @@ def _source(label: str, dataset: str, source_type: SourceType, status: SourceSta
 
 def test_build_filter_options_dedupes_and_sorts() -> None:
     sources = [
-        _source("A", "ds1", SourceType.sheet, SourceStatus.ready).model_copy(update={"groups": ["north"]}),
-        _source("B", "ds1", SourceType.tmp_file, SourceStatus.ingesting).model_copy(update={"groups": ["north", "east"]}),
-        _source("C", "ds2", SourceType.sheet, SourceStatus.ready).model_copy(update={"groups": ["west"]}),
+        _source("A", "ds1", SourceType.sheet, SourceStatus.ready).model_copy(
+            update={"groups": ["north"]}
+        ),
+        _source("B", "ds1", SourceType.tmp_file, SourceStatus.ingesting).model_copy(
+            update={"groups": ["north", "east"]}
+        ),
+        _source("C", "ds2", SourceType.sheet, SourceStatus.ready).model_copy(
+            update={"groups": ["west"]}
+        ),
     ]
 
     options = build_filter_options(sources)
@@ -30,9 +36,11 @@ def test_build_filter_options_dedupes_and_sorts() -> None:
 
 
 def test_summarize_filters_orders_labels() -> None:
-    summary = summarize_filters(dataset="ds1", source_type="sheet", status="ready", group="north", search="foo")
+    summary = summarize_filters(
+        dataset="ds1", source_type="sheet", status="ready", group="north", search="foo"
+    )
     assert "dataset=ds1" in summary
     assert "type=sheet" in summary
     assert "status=ready" in summary
     assert "group=north" in summary
-    assert "search=\"foo\"" in summary
+    assert 'search="foo"' in summary

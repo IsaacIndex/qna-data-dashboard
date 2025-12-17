@@ -9,19 +9,16 @@ from app.services.legacy_reconcile import LegacyReconcileResult, LegacyReconcile
 from app.services.source_repository import SourceRepository
 
 router = APIRouter(prefix="/sources", tags=["sources"])
-default_repository = SourceRepository()
-default_reconcile_service = LegacyReconcileService(repository=default_repository)
 
 
 def get_repository() -> SourceRepository:
-    return default_repository
+    return SourceRepository()
 
 
 def get_reconcile_service(
     repo: Annotated[SourceRepository, Depends(get_repository)],
 ) -> LegacyReconcileService:
-    default_reconcile_service.repository = repo
-    return default_reconcile_service
+    return LegacyReconcileService(repository=repo)
 
 
 class LegacyReconcileRequest(BaseModel):

@@ -4,21 +4,24 @@ import json
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any
 
 from app.utils.logging import get_logger
 
 LOGGER = get_logger(__name__)
 
 
-def emit_ingest_metric(event: str, **fields: Any) -> dict[str, Any]:
+def emit_ingest_metric(event: str, **fields: object) -> dict[str, object]:
     """Lightweight metrics stub that returns the payload and logs it for observability."""
-    payload = {"event": _normalize_event(event), "timestamp": datetime.now(UTC).isoformat(), **fields}
+    payload = {
+        "event": _normalize_event(event),
+        "timestamp": datetime.now(UTC).isoformat(),
+        **fields,
+    }
     _log_payload(payload)
     return payload
 
 
-def timing_payload(event: str, *, elapsed_ms: float, **fields: Any) -> dict[str, Any]:
+def timing_payload(event: str, *, elapsed_ms: float, **fields: object) -> dict[str, object]:
     payload = {
         "event": f"{_normalize_event(event)}.timing",
         "elapsed_ms": elapsed_ms,
@@ -28,14 +31,14 @@ def timing_payload(event: str, *, elapsed_ms: float, **fields: Any) -> dict[str,
     return payload
 
 
-def emit_ingest_timing(event: str, *, elapsed_ms: float, **fields: Any) -> dict[str, Any]:
+def emit_ingest_timing(event: str, *, elapsed_ms: float, **fields: object) -> dict[str, object]:
     payload = timing_payload(event, elapsed_ms=elapsed_ms, **fields)
     _log_payload(payload)
     return payload
 
 
 @contextmanager
-def measure_ingest(event: str, **fields: Any) -> None:
+def measure_ingest(event: str, **fields: object) -> None:
     """Context manager to emit timing metrics around ingest operations."""
     start = perf_counter()
     try:
@@ -49,7 +52,7 @@ def _normalize_event(event: str) -> str:
     return event if event.startswith("ingest.") else f"ingest.{event}"
 
 
-def _log_payload(payload: dict[str, Any]) -> None:
+def _log_payload(payload: dict[str, object]) -> None:
     try:
         LOGGER.info(json.dumps(payload))
     except Exception:

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.services.embedding_queue import EmbeddingQueue, default_queue
-from app.services.ingest_models import EmbeddingJob, SourceFile
+from app.services.ingest_models import SourceFile
 from app.services.ingest_storage import IngestStorage, default_storage
 from app.utils.audit import record_audit
 
@@ -32,7 +32,9 @@ def list_sources(
     group_id: str,
     storage: Annotated[IngestStorage, Depends(get_storage)],
 ) -> list[dict]:
-    return [storage._serialize_source(item) for item in storage.list_sources(group_id)]  # noqa: SLF001
+    return [
+        storage._serialize_source(item) for item in storage.list_sources(group_id)
+    ]  # noqa: SLF001
 
 
 @router.post(
@@ -59,9 +61,19 @@ def upload_sources(
                     added_by=None,
                 )
             )
-            record_audit("source.upload", "success", user=None, details={"group": group_id, "file": file.filename})
+            record_audit(
+                "source.upload",
+                "success",
+                user=None,
+                details={"group": group_id, "file": file.filename},
+            )
         except Exception as exc:
-            record_audit("source.upload", "failure", user=None, details={"group": group_id, "file": file.filename})
+            record_audit(
+                "source.upload",
+                "failure",
+                user=None,
+                details={"group": group_id, "file": file.filename},
+            )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     return [storage._serialize_source(item) for item in results]  # noqa: SLF001
 
@@ -78,7 +90,9 @@ def delete_source(
     deleted = storage.delete_source(group_id, source_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Source not found")
-    record_audit("source.delete", "success", user=None, details={"group": group_id, "source_id": source_id})
+    record_audit(
+        "source.delete", "success", user=None, details={"group": group_id, "source_id": source_id}
+    )
     return {"status": "deleted"}
 
 
@@ -96,7 +110,12 @@ def trigger_reembed(
     if not source_ids:
         raise HTTPException(status_code=400, detail="No source_ids provided")
     job = queue.enqueue(group_id, list(source_ids), triggered_by=None)
-    record_audit("source.reembed", "queued", user=None, details={"group": group_id, "sources": len(source_ids)})
+    record_audit(
+        "source.reembed",
+        "queued",
+        user=None,
+        details={"group": group_id, "sources": len(source_ids)},
+    )
     return {"job_ids": [job.id]}
 
 

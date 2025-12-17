@@ -17,8 +17,8 @@ def _write_index(root: Path, dataset: str, entries: list[dict[str, Any]]) -> Pat
 
 def seed_mixed_source_indexes(base: Path, *, include_conflict: bool = False) -> dict[str, Any]:
     """
-    Create a mixed set of ingest index files with tmp files, sheets, embeddings, and a legacy record.
-    Returns the UUIDs and labels for convenience in tests.
+    Create a mixed set of ingest index files with tmp files, sheets, embeddings, and a
+    legacy record. Returns the UUIDs and labels for convenience in tests.
     """
     now = datetime.now(UTC)
     ingest_root = base / "ingest_sources"

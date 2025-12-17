@@ -13,16 +13,24 @@ from app.utils.source_uuid import (
 
 
 def test_stable_uuid_is_deterministic() -> None:
-    uuid_one = stable_source_uuid(label="Sales Data", dataset="analytics", source_type=SourceType.sheet)
-    uuid_two = stable_source_uuid(label="Sales Data", dataset="analytics", source_type=SourceType.sheet)
-    uuid_other = stable_source_uuid(label="Sales Data", dataset="other", source_type=SourceType.sheet)
+    uuid_one = stable_source_uuid(
+        label="Sales Data", dataset="analytics", source_type=SourceType.sheet
+    )
+    uuid_two = stable_source_uuid(
+        label="Sales Data", dataset="analytics", source_type=SourceType.sheet
+    )
+    uuid_other = stable_source_uuid(
+        label="Sales Data", dataset="other", source_type=SourceType.sheet
+    )
 
     assert uuid_one == uuid_two
     assert uuid_one != uuid_other
 
 
 def test_canonical_key_normalizes_whitespace_and_case() -> None:
-    key = canonical_source_key(label="  Sales Data  ", dataset="ANALYTICS ", source_type=SourceType.sheet)
+    key = canonical_source_key(
+        label="  Sales Data  ", dataset="ANALYTICS ", source_type=SourceType.sheet
+    )
     assert key == "analytics|sheet|sales data"
 
 
@@ -30,7 +38,9 @@ def test_detect_legacy_reason_prioritizes_missing_uuid() -> None:
     reason = detect_legacy_reason({"extracted_columns": []}, path_exists=True)
     assert reason is LegacyReason.missing_uuid
 
-    reason_missing_headers = detect_legacy_reason({"uuid": "123", "extracted_columns": []}, path_exists=True)
+    reason_missing_headers = detect_legacy_reason(
+        {"uuid": "123", "extracted_columns": []}, path_exists=True
+    )
     assert reason_missing_headers is LegacyReason.missing_headers
 
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.services.audit_log import AuditLogService
 
 
@@ -9,8 +11,12 @@ def test_audit_log_writes_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
     service = AuditLogService()
 
-    entry = service.record_legacy_reinsertion(source_uuid="123", outcome="succeeded", conflict=False)
-    another = service.record_bulk_action(uuids=["1", "2"], outcome="partial", details={"status": "ready"})
+    entry = service.record_legacy_reinsertion(
+        source_uuid="123", outcome="succeeded", conflict=False
+    )
+    another = service.record_bulk_action(
+        uuids=["1", "2"], outcome="partial", details={"status": "ready"}
+    )
 
     log_path = service.log_path
     contents = log_path.read_text().strip().splitlines()

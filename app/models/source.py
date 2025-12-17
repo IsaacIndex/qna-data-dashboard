@@ -74,6 +74,6 @@ class LegacySource(Source):
     original_id: str | None = None
 
     @model_validator(mode="after")
-    def _force_legacy_flag(self) -> "LegacySource":
+    def _force_legacy_flag(self) -> LegacySource:
         self.legacy = True
         return self

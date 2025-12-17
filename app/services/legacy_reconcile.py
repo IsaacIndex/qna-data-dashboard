@@ -45,7 +45,9 @@ class LegacyReconcileService:
         self.audit_log = audit_log or AuditLogService()
         if metadata_session_factory is None:
             sqlite_path = (self.repository.storage_root.parent / "metadata.db").resolve()
-            metadata_session_factory = create_session_factory(build_engine(f"sqlite:///{sqlite_path}"))
+            metadata_session_factory = create_session_factory(
+                build_engine(f"sqlite:///{sqlite_path}")
+            )
         self.metadata_session_factory = metadata_session_factory
 
     def reconcile(self, *, dry_run: bool = False) -> LegacyReconcileResult:
@@ -67,11 +69,18 @@ class LegacyReconcileService:
                 target_path = (
                     Path(storage_path)
                     if storage_path
-                    else self.repository.storage_root / dataset / (entry.get("version_label") or entry.get("filename") or "restored.csv")
+                    else self.repository.storage_root
+                    / dataset
+                    / (entry.get("version_label") or entry.get("filename") or "restored.csv")
                 )
                 target_exists = target_path.expanduser().exists()
 
-                label = entry.get("label") or entry.get("version_label") or entry.get("filename") or "source"
+                label = (
+                    entry.get("label")
+                    or entry.get("version_label")
+                    or entry.get("filename")
+                    or "source"
+                )
                 original_id = entry.get("original_id") or entry.get("id")
                 source_type = self.repository._infer_type(entry)
                 canonical_uuid = ensure_canonical_uuid(
@@ -87,7 +96,11 @@ class LegacyReconcileService:
 
                 if needs_reinsert:
                     if target_path.exists():
-                        LOGGER.warning("Skipping reinsertion for %s; file already exists at %s", label, target_path)
+                        LOGGER.warning(
+                            "Skipping reinsertion for %s; file already exists at %s",
+                            label,
+                            target_path,
+                        )
                         conflicts.append(
                             {
                                 "legacy_id": original_id or label,
@@ -140,7 +153,6 @@ class LegacyReconcileService:
 
     def _backfill_sheet_catalog(self, *, dry_run: bool) -> list[str]:
         """Ensure legacy Sheet Catalog bundles appear in ingest_sources for unified listing."""
-        existing = self._existing_uuids()
         created: list[str] = []
         dataset = "catalog"
         index_path = self.repository.storage_root / dataset / "_index.json"
@@ -153,7 +165,9 @@ class LegacyReconcileService:
             try:
                 bundles = metadata.list_source_bundles()
             except OperationalError:
-                LOGGER.warning("Skipping sheet catalog backfill: metadata tables not initialized yet.")
+                LOGGER.warning(
+                    "Skipping sheet catalog backfill: metadata tables not initialized yet."
+                )
                 return created
             if not bundles:
                 return created
@@ -164,13 +178,29 @@ class LegacyReconcileService:
             for sheet in sheets:
 
                 bundle = bundle_map.get(sheet.bundle_id)
-                storage_path = Path(bundle.original_path).expanduser() if bundle and bundle.original_path else None
-                status = SourceStatus.ready if getattr(sheet, "status", None) == SheetStatus.ACTIVE else SourceStatus.archived
+                storage_path = (
+                    Path(bundle.original_path).expanduser()
+                    if bundle and bundle.original_path
+                    else None
+                )
+                status = (
+                    SourceStatus.ready
+                    if getattr(sheet, "status", None) == SheetStatus.ACTIVE
+                    else SourceStatus.archived
+                )
                 columns = []
                 if sheet.column_schema:
-                    columns = [column.get("name") for column in sheet.column_schema if isinstance(column, dict) and column.get("name")]
+                    columns = [
+                        column.get("name")
+                        for column in sheet.column_schema
+                        if isinstance(column, dict) and column.get("name")
+                    ]
 
-                added_at = sheet.last_refreshed_at or (bundle.updated_at if bundle else None) or (bundle.created_at if bundle else None)
+                added_at = (
+                    sheet.last_refreshed_at
+                    or (bundle.updated_at if bundle else None)
+                    or (bundle.created_at if bundle else None)
+                )
                 added_at_str = added_at.isoformat() if added_at else None
                 last_updated = sheet.last_refreshed_at or (bundle.updated_at if bundle else None)
                 last_updated_str = last_updated.isoformat() if last_updated else None
@@ -181,15 +211,22 @@ class LegacyReconcileService:
                     "document_group_id": dataset,
                     "filename": sheet.display_label,
                     "version_label": sheet.display_label,
-                    "size_bytes": storage_path.stat().st_size if storage_path and storage_path.exists() else 0,
-                    "mime_type": _mime_type(bundle.file_type) if bundle else "application/octet-stream",
-                    "storage_path": str(storage_path) if storage_path and storage_path.exists() else "",
+                    "size_bytes": (
+                        storage_path.stat().st_size if storage_path and storage_path.exists() else 0
+                    ),
+                    "mime_type": (
+                        _mime_type(bundle.file_type) if bundle else "application/octet-stream"
+                    ),
+                    "storage_path": (
+                        str(storage_path) if storage_path and storage_path.exists() else ""
+                    ),
                     "status": status.value,
                     "added_at": added_at_str,
                     "last_updated": last_updated_str,
                     "last_updated_at": last_updated_str,
                     "extracted_columns": columns or ["legacy_sheet_catalog"],
-                    "tags": ["sheet-catalog", "legacy"] + (list(sheet.tags or []) if hasattr(sheet, "tags") and sheet.tags else []),
+                    "tags": ["sheet-catalog", "legacy"]
+                    + (list(sheet.tags or []) if hasattr(sheet, "tags") and sheet.tags else []),
                     "type": SourceType.sheet.value,
                 }
 
@@ -216,7 +253,8 @@ class LegacyReconcileService:
         return created
 
     def _backfill_catalog_metadata(self, *, dry_run: bool) -> list[str]:
-        """Insert missing ingest entries into metadata DB so Sheet Source Catalog reflects new files."""
+        """Insert missing ingest entries into metadata DB so the Sheet Source Catalog
+        reflects new files."""
         created: list[str] = []
         with session_scope(self.metadata_session_factory) as session:
             metadata = MetadataRepository(session=session)
@@ -237,7 +275,9 @@ class LegacyReconcileService:
                     if not storage_path.exists():
                         continue
 
-                    filename = entry.get("filename") or entry.get("version_label") or storage_path.name
+                    filename = (
+                        entry.get("filename") or entry.get("version_label") or storage_path.name
+                    )
                     bundle_id = str(uuid5(SOURCE_NAMESPACE, f"bundle|{storage_path}"))
                     bundle = metadata.get_source_bundle(bundle_id)
                     if bundle is None and not dry_run:
@@ -256,8 +296,14 @@ class LegacyReconcileService:
                         created.append(sheet_id)
                         continue
 
-                    column_schema = [{"name": name} for name in entry.get("extracted_columns") or []]
-                    status = SheetStatus.ACTIVE if entry.get("status", "ready") == "ready" else SheetStatus.INACTIVE
+                    column_schema = [
+                        {"name": name} for name in entry.get("extracted_columns") or []
+                    ]
+                    status = (
+                        SheetStatus.ACTIVE
+                        if entry.get("status", "ready") == "ready"
+                        else SheetStatus.INACTIVE
+                    )
                     sheet = metadata.create_sheet_source(
                         bundle=bundle,
                         sheet_name=filename.split(":")[-1],

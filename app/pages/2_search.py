@@ -558,9 +558,7 @@ def main() -> None:
                 label_visibility="collapsed",
             )
         with action_col:
-            form_submitted = st.form_submit_button(
-                "Run Search", type="primary", width="stretch"
-            )
+            form_submitted = st.form_submit_button("Run Search", type="primary", width="stretch")
     min_similarity = st.slider(
         "Minimum similarity", min_value=0.0, max_value=1.0, value=0.6, step=0.05
     )

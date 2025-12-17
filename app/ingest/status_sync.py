@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.models.source import Source, SourceStatus
 
@@ -19,9 +19,9 @@ def _status_rank(status: SourceStatus) -> int:
 
 def _timestamp(source: Source) -> datetime:
     if source.last_updated is None:
-        return datetime.min.replace(tzinfo=timezone.utc)
+        return datetime.min.replace(tzinfo=UTC)
     if source.last_updated.tzinfo is None:
-        return source.last_updated.replace(tzinfo=timezone.utc)
+        return source.last_updated.replace(tzinfo=UTC)
     return source.last_updated
 
 

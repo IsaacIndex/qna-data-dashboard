@@ -16,7 +16,9 @@ def test_add_delete_flow(tmp_path: Path) -> None:
             reembed_concurrency=3,
         )
     )
-    saved = storage.save_upload("group1", io.BytesIO(b"a,b\n1,2\n"), filename="flow.csv", mime_type="text/csv")
+    saved = storage.save_upload(
+        "group1", io.BytesIO(b"a,b\n1,2\n"), filename="flow.csv", mime_type="text/csv"
+    )
     assert saved.status.value == "ready"
     listed = storage.list_sources("group1")
     assert len(listed) == 1

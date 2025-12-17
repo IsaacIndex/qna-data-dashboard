@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api import ingest_sources, group_preferences
+from app.api import group_preferences, ingest_sources
 from app.api.routes.ingest import router as ingest_router
 from app.api.routes.legacy import router as legacy_router
 from app.api.routes.reembed import router as reembed_router

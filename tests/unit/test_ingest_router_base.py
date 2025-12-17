@@ -4,8 +4,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.routes.ingest import router as ingest_router
-from app.api.routes.reembed import router as reembed_router
 from app.api.routes.legacy import router as legacy_router
+from app.api.routes.reembed import router as reembed_router
 
 
 def test_ingest_router_exposes_stub_endpoints(tmp_path, monkeypatch) -> None:

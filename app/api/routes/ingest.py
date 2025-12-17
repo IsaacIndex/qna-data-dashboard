@@ -5,10 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from app.models.source import Source
 from app.services.audit_log import AuditLogService
 from app.services.source_repository import SourceRepository
 from app.services.source_service import SourcePage, SourceService
-from app.models.source import Source
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -72,5 +72,7 @@ async def bulk_update(
         results = repo.bulk_update(request.uuids, status=request.status, groups=request.groups)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
-    audit_log.record_bulk_action(uuids=request.uuids, outcome="completed", details=request.model_dump())
+    audit_log.record_bulk_action(
+        uuids=request.uuids, outcome="completed", details=request.model_dump()
+    )
     return {"results": results}

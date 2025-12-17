@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import io
 import json
 import uuid
 from collections.abc import Iterable, Sequence
@@ -85,8 +84,8 @@ class IngestStorage:
         for entry in self._load_index(group_id):
             try:
                 sources.append(self._deserialize_source(entry))
-            except Exception:
-                continue
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Skipping invalid ingest index entry for %s: %s", group_id, exc)
         return sources
 
     def save_upload(
@@ -203,7 +202,9 @@ class IngestStorage:
             "added_by": source.added_by,
             "added_at": source.added_at.isoformat(),
             "status": source.status.value,
-            "last_updated_at": source.last_updated_at.isoformat() if source.last_updated_at else None,
+            "last_updated_at": (
+                source.last_updated_at.isoformat() if source.last_updated_at else None
+            ),
             "validation_error": source.validation_error,
             "audit_log_ref": source.audit_log_ref,
             "extracted_columns": list(source.extracted_columns),
@@ -222,9 +223,11 @@ class IngestStorage:
             added_by=payload.get("added_by"),
             added_at=datetime.fromisoformat(payload["added_at"]),
             status=SourceStatus(payload.get("status", SourceStatus.READY)),
-            last_updated_at=datetime.fromisoformat(payload["last_updated_at"])
-            if payload.get("last_updated_at")
-            else None,
+            last_updated_at=(
+                datetime.fromisoformat(payload["last_updated_at"])
+                if payload.get("last_updated_at")
+                else None
+            ),
             validation_error=payload.get("validation_error"),
             audit_log_ref=payload.get("audit_log_ref"),
             extracted_columns=tuple(payload.get("extracted_columns") or ()),
@@ -236,7 +239,12 @@ class IngestStorage:
         root.mkdir(parents=True, exist_ok=True)
         return root / "_preferences.json"
 
-    def save_preferences(self, group_id: str, selected_columns: Sequence[str], contextual_fields: Sequence[str] | None) -> dict:
+    def save_preferences(
+        self,
+        group_id: str,
+        selected_columns: Sequence[str],
+        contextual_fields: Sequence[str] | None,
+    ) -> dict:
         payload = {
             "selected_columns": list(selected_columns),
             "contextual_fields": list(contextual_fields or []),

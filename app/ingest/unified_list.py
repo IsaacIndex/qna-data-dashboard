@@ -50,7 +50,10 @@ def render_unified_list(service: SourceService | None = None, *, page_limit: int
     service = service or SourceService()
     apply_accessibility_baseline()
     st.subheader("Unified source inventory", anchor="unified-source-inventory")
-    st.caption("Keyboard: tab through filters, press Enter to open dropdowns, and use load more to append rows.")
+    st.caption(
+        "Keyboard: tab through filters, press Enter to open dropdowns, and use load "
+        "more to append rows."
+    )
 
     options = service.build_filter_options()
     dataset = st.selectbox(
@@ -88,7 +91,9 @@ def render_unified_list(service: SourceService | None = None, *, page_limit: int
         st.session_state["unified_sources"] = []
         st.session_state["unified_cursor"] = None
 
-    if st.button("Refresh unified list", help="Reset filters, clear cursor, and reload the first page."):
+    if st.button(
+        "Refresh unified list", help="Reset filters, clear cursor, and reload the first page."
+    ):
         st.session_state["unified_sources"] = []
         st.session_state["unified_cursor"] = None
 
@@ -128,13 +133,17 @@ def render_unified_list(service: SourceService | None = None, *, page_limit: int
         hide_index=True,
         use_container_width=True,
         column_config={
-            "displayLabel": st.column_config.TextColumn("Source", help="Human-readable label plus dataset/type."),
+            "displayLabel": st.column_config.TextColumn(
+                "Source", help="Human-readable label plus dataset/type."
+            ),
             "status": st.column_config.TextColumn("Status", width="small"),
             "dataset": st.column_config.TextColumn("Dataset", width="small"),
             "type": st.column_config.TextColumn("Type", width="small"),
             "legacy": st.column_config.CheckboxColumn("Legacy", disabled=True),
             "groups": st.column_config.ListColumn("Groups", width="medium"),
-            "lastUpdated": st.column_config.DatetimeColumn("Last updated", format="YYYY-MM-DD HH:mm"),
+            "lastUpdated": st.column_config.DatetimeColumn(
+                "Last updated", format="YYYY-MM-DD HH:mm"
+            ),
         },
     )
 

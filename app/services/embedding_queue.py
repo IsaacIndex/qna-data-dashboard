@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import time
 import uuid
-from collections import deque, defaultdict
+from collections import defaultdict, deque
 from datetime import UTC, datetime
-from typing import Deque
 
 from app.services.ingest_models import EmbeddingJob, JobStatus
 from app.utils.config import load_ingest_config
@@ -19,11 +17,13 @@ class EmbeddingQueue:
     def __init__(self, concurrency: int | None = None) -> None:
         config = load_ingest_config()
         self.concurrency = concurrency or config.reembed_concurrency
-        self._queues: dict[str, Deque[EmbeddingJob]] = defaultdict(deque)
+        self._queues: dict[str, deque[EmbeddingJob]] = defaultdict(deque)
         self._processing: dict[str, dict[str, EmbeddingJob]] = defaultdict(dict)
         self._completed: dict[str, dict[str, EmbeddingJob]] = defaultdict(dict)
 
-    def enqueue(self, group_id: str, source_ids: list[str], triggered_by: str | None) -> EmbeddingJob:
+    def enqueue(
+        self, group_id: str, source_ids: list[str], triggered_by: str | None
+    ) -> EmbeddingJob:
         job_id = str(uuid.uuid4())
         job = EmbeddingJob(
             id=job_id,
@@ -55,7 +55,11 @@ class EmbeddingQueue:
         return retried
 
     def get_job(self, group_id: str, job_id: str) -> EmbeddingJob | None:
-        for container in (self._queues[group_id], self._processing[group_id].values(), self._completed[group_id].values()):
+        for container in (
+            self._queues[group_id],
+            self._processing[group_id].values(),
+            self._completed[group_id].values(),
+        ):
             for job in container:
                 if job.id == job_id:
                     return job
@@ -97,7 +101,9 @@ class EmbeddingQueue:
         )
         self._completed[group_id][finished.id] = finished
         self._processing[group_id].pop(finished.id, None)
-        LOGGER.info("Completed embed job %s for group %s in %sms", finished.id, group_id, duration_ms)
+        LOGGER.info(
+            "Completed embed job %s for group %s in %sms", finished.id, group_id, duration_ms
+        )
 
     def get_status(self, group_id: str, job_id: str) -> EmbeddingJob | None:
         return self.get_job(group_id, job_id)

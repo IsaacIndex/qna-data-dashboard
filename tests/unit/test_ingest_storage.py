@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import io
-import tempfile
 from pathlib import Path
+
+import pytest
 
 from app.services.ingest_storage import IngestStorage
 from app.utils.config import IngestConfig
@@ -31,12 +32,8 @@ def test_versioned_filenames(tmp_path: Path) -> None:
 def test_rejects_large_files(tmp_path: Path) -> None:
     storage = make_storage(tmp_path, max_bytes=4)
     payload = io.BytesIO(b"12345")
-    try:
+    with pytest.raises(ValueError, match="File too large"):
         storage.save_upload("group-a", payload, filename="big.csv", mime_type="text/csv")
-    except ValueError as exc:
-        assert "File too large" in str(exc)
-    else:
-        assert False, "expected ValueError for large file"
 
 
 def test_skips_missing_headers(tmp_path: Path) -> None:

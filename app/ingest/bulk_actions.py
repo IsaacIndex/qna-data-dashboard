@@ -40,7 +40,10 @@ def render_bulk_actions(
         "Select sources",
         options=labels,
         default=[],
-        help="Tab to focus, press space to toggle selections; labels include dataset/type for clarity.",
+        help=(
+            "Tab to focus, press space to toggle selections; labels include "
+            "dataset/type for clarity."
+        ),
     )
     selected_rows = [row for row in rows if row["displayLabel"] in selected_labels]
 
@@ -48,22 +51,34 @@ def render_bulk_actions(
         "New status",
         options=[""] + [status.value for status in SourceStatus],
         index=0,
-        help="Apply a canonical status across selected sources; leave blank to keep current statuses.",
+        help=(
+            "Apply a canonical status across selected sources; leave blank to "
+            "keep current statuses."
+        ),
     )
     groups_input = st.text_input(
         "Group tags (comma separated)",
         value="",
-        help="Example: finance, reviewed, needs-mapping. Tags are deduplicated and trimmed automatically.",
+        help=(
+            "Example: finance, reviewed, needs-mapping. Tags are deduplicated "
+            "and trimmed automatically."
+        ),
     )
     groups = [value.strip() for value in groups_input.split(",") if value.strip()]
 
-    if st.button("Apply bulk update", type="primary", help="Writes per-item results; successes and failures are reported."):
+    if st.button(
+        "Apply bulk update",
+        type="primary",
+        help="Writes per-item results; successes and failures are reported.",
+    ):
         if not selected_rows:
             st.warning("Choose at least one source to update.")
             return
         uuids = [row["uuid"] for row in selected_rows]
         try:
-            results = repository.bulk_update(uuids, status=status_choice or None, groups=groups or None)
+            results = repository.bulk_update(
+                uuids, status=status_choice or None, groups=groups or None
+            )
         except ValueError as error:
             st.error(str(error))
             return

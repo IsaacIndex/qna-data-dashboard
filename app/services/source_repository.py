@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Sequence
 
-from app.models.source import LegacyReason, LegacySource, Source, SourceStatus, SourceType
+from app.models.source import LegacySource, Source, SourceStatus, SourceType
 from app.utils.config import get_data_root
 from app.utils.metrics import emit_ingest_metric
 from app.utils.source_uuid import detect_legacy_reason, ensure_canonical_uuid
@@ -71,7 +71,11 @@ class SourceRepository:
         )
 
     def bulk_update(
-        self, uuids: Sequence[str], *, status: str | None = None, groups: Sequence[str] | None = None
+        self,
+        uuids: Sequence[str],
+        *,
+        status: str | None = None,
+        groups: Sequence[str] | None = None,
     ) -> list[dict[str, object]]:
         """Apply status/group updates across ingest index files and report per-item results."""
         if not uuids:
@@ -87,7 +91,8 @@ class SourceRepository:
         normalized_groups = self._normalize_groups(groups) if groups is not None else None
         targets = set(uuids)
         results: dict[str, dict[str, object]] = {
-            uuid: {"uuid": uuid, "status": None, "groups": [], "error": "not found"} for uuid in targets
+            uuid: {"uuid": uuid, "status": None, "groups": [], "error": "not found"}
+            for uuid in targets
         }
 
         for index_path in self._iter_index_files():
@@ -155,11 +160,15 @@ class SourceRepository:
 
     def _hydrate_source(self, entry: dict, *, dataset_override: str) -> Source | None:
         uuid = entry.get("uuid") or entry.get("id")
-        label = entry.get("label") or entry.get("version_label") or entry.get("filename") or "source"
+        label = (
+            entry.get("label") or entry.get("version_label") or entry.get("filename") or "source"
+        )
         dataset = entry.get("dataset") or dataset_override
         source_type = self._infer_type(entry)
         source_status = self._map_status(entry.get("status"))
-        last_updated = self._parse_datetime(entry.get("last_updated") or entry.get("last_updated_at"))
+        last_updated = self._parse_datetime(
+            entry.get("last_updated") or entry.get("last_updated_at")
+        )
         groups = entry.get("groups") or entry.get("tags") or []
         storage_path = entry.get("storage_path") or ""
         path_exists = Path(storage_path).expanduser().exists() if storage_path else False

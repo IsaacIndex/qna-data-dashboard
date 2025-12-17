@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid5
 
 from app.models.source import LegacyReason, SourceType
 
@@ -56,17 +56,22 @@ def ensure_canonical_uuid(
     """
     Produce a stable UUID for a source, persisting a legacy mapping when a map_path is provided.
     """
+    canonical_key = canonical_source_key(label=label, dataset=dataset, source_type=source_type)
     mapping: dict[str, str] = {}
     if map_path is not None:
         mapping = _load_uuid_map(map_path)
-        key = f"legacy:{original_id}" if original_id else f"source:{canonical_source_key(label=label, dataset=dataset, source_type=source_type)}"
+        key = f"legacy:{original_id}" if original_id else f"source:{canonical_key}"
         if key in mapping:
             return mapping[key]
     if original_id:
-        identity = f"{canonical_source_key(label=label, dataset=dataset, source_type=source_type)}|{original_id}"
+        identity = f"{canonical_key}|{original_id}"
     else:
-        identity = canonical_source_key(label=label, dataset=dataset, source_type=source_type)
-    uuid_value = str(uuid5(SOURCE_NAMESPACE, identity)) if map_path else stable_source_uuid(label=label, dataset=dataset, source_type=source_type)
+        identity = canonical_key
+    uuid_value = (
+        str(uuid5(SOURCE_NAMESPACE, identity))
+        if map_path
+        else stable_source_uuid(label=label, dataset=dataset, source_type=source_type)
+    )
     if map_path is not None:
         mapping[key] = uuid_value
         _persist_uuid_map(map_path, mapping)

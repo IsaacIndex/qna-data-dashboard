@@ -18,7 +18,9 @@ def _audit_log_path() -> Path:
     return log_dir / "audit.log"
 
 
-def record_audit(action: str, outcome: str, *, user: str | None, details: dict[str, Any]) -> dict[str, Any]:
+def record_audit(
+    action: str, outcome: str, *, user: str | None, details: dict[str, Any]
+) -> dict[str, Any]:
     entry = {
         "timestamp": datetime.now(UTC).isoformat(),
         "action": action,
